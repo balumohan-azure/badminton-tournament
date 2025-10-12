@@ -2,7 +2,7 @@
   "name": "badminton-tournament",
   "version": "1.0.0",
   "description": "AI-powered badminton tournament management system",
-  "homepage": "https://yourusername.github.io/badminton-tournament",
+  "homepage": "https://balumohan-azure.github.io/badminton-tournament",
   "main": "server/index.js",
   "scripts": {
     "dev": "concurrently \"npm run server\" \"npm run client\"",
