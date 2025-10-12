@@ -2,7 +2,7 @@
   "name": "client",
   "version": "0.1.0",
   "private": true,
-  "homepage": "https://yourusername.github.io/badminton-tournament",
+  "homepage": "https://balumohan-azure.github.io/badminton-tournament",
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
