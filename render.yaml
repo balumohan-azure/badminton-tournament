@@ -1,0 +1,13 @@
+# Render deployment configuration
+# This file tells Render how to deploy your Node.js backend
+
+# Build command
+buildCommand: "cd server && npm install"
+
+# Start command  
+startCommand: "cd server && npm start"
+
+# Environment variables (set these in Render dashboard)
+# GEMINI_API_KEY=your_gemini_api_key_here
+# NODE_ENV=production
+# PORT=10000
