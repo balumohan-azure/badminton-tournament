@@ -18,7 +18,7 @@ fi
 # Check if remote origin is set
 if ! git remote get-url origin > /dev/null 2>&1; then
     echo "❌ No remote origin set. Please run:"
-    echo "   git remote add origin https://github.com/yourusername/badminton-tournament.git"
+    echo "   git remote add origin https://github.com/balumohan-azure/badminton-tournament.git"
     exit 1
 fi
 
@@ -53,13 +53,19 @@ echo "🚀 Ready to deploy! Next steps:"
 echo "1. Update homepage URLs in package.json files with your GitHub username"
 echo "2. Push to GitHub: git push origin main"
 echo "3. Set up Render backend deployment (render.yaml configured)"
-echo "4. Add REACT_APP_API_URL secret in GitHub repository settings"
+echo "4. Add REACT_APP_API_URL secret in GitHub repository settings:"
+echo "   Name: REACT_APP_API_URL"
+echo "   Value: https://badminton-tournament.onrender.com/api"
 echo "5. Enable GitHub Pages in repository settings"
 echo ""
 echo "📖 See DEPLOYMENT_GITHUB_PAGES_RENDER.md for detailed instructions"
 echo ""
 echo "⚠️  Note: Render free tier has sleep mode (15 min inactivity)"
 echo "   First request after sleep takes ~30 seconds"
+echo ""
+echo "🎯 Your app will be available at:"
+echo "   Frontend: https://balumohan-azure.github.io/badminton-tournament"
+echo "   Backend: https://badminton-tournament.onrender.com"
 
 # Optional: Test build locally
 read -p "Would you like to test the build locally? (y/n): " -n 1 -r

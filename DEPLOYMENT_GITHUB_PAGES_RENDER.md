@@ -25,7 +25,7 @@ git init
 git add .
 git commit -m "Add GitHub Pages deployment configuration"
 git branch -M main
-git remote add origin https://github.com/yourusername/badminton-tournament.git
+git remote add origin https://github.com/balumohan-azure/badminton-tournament.git
 git push -u origin main
 ```
 
@@ -78,7 +78,7 @@ Click **"Create Web Service"**. Render will automatically deploy your backend. N
 3. Click **"New repository secret"**
 4. Add the following secret:
    - **Name**: `REACT_APP_API_URL`
-   - **Value**: `https://your-render-app.onrender.com/api`
+   - **Value**: `https://badminton-tournament.onrender.com/api` (note: must include `/api`)
 
 ### 3.2 Enable GitHub Pages
 1. Go to **Settings** → **Pages**
@@ -96,7 +96,7 @@ Replace `yourusername` with your actual GitHub username in:
 ```bash
 # Test the production build locally
 cd client
-REACT_APP_API_URL=https://your-render-app.onrender.com/api npm run build
+REACT_APP_API_URL=https://badminton-tournament.onrender.com/api npm run build
 npx serve -s build
 ```
 
@@ -117,7 +117,7 @@ git push origin main
 4. Check Render logs for backend deployment
 
 ### 5.3 Test Your App
-1. Visit: `https://yourusername.github.io/badminton-tournament`
+1. Visit: `https://balumohan-azure.github.io/badminton-tournament`
 2. Add some players
 3. Create a tournament
 4. Verify AI team creation works
@@ -131,7 +131,7 @@ Update your server's CORS configuration for Render:
 // In server/index.js, update the CORS configuration
 app.use(cors({
   origin: [
-    'https://yourusername.github.io',
+    'https://balumohan-azure.github.io',
     'http://localhost:3000'
   ],
   credentials: true
@@ -155,8 +155,9 @@ To prevent sleep mode, you can:
 
 ### Frontend (GitHub Actions)
 ```
-REACT_APP_API_URL=https://your-render-app.onrender.com/api
+REACT_APP_API_URL=https://badminton-tournament.onrender.com/api
 ```
+**Important**: The URL must end with `/api` because all server routes start with `/api`
 
 ### Backend (Render)
 ```
@@ -269,8 +270,8 @@ your-repo/
 ## 🎉 You're All Set!
 
 Your badminton tournament app will be available at:
-- **Frontend**: `https://yourusername.github.io/badminton-tournament`
-- **Backend**: `https://your-render-app.onrender.com`
+- **Frontend**: `https://balumohan-azure.github.io/badminton-tournament`
+- **Backend**: `https://badminton-tournament.onrender.com`
 
 The app will automatically redeploy whenever you push changes to the main branch! 
 
