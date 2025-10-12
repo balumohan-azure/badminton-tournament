@@ -5,7 +5,6 @@ import {
   CardContent,
   Typography,
   Button,
-  Grid,
   Chip,
   Alert,
   Paper,
@@ -108,8 +107,6 @@ const TournamentResults: React.FC = () => {
   }
 
   const { tournament, teamStats, champion, completedFixtures } = results;
-  const winningTeam = teamStats.team1.wins > teamStats.team2.wins ? 'Team 1' : 'Team 2';
-  const isDraw = teamStats.team1.wins === teamStats.team2.wins;
 
   return (
     <Box>
