@@ -22,7 +22,7 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Router>
+      <Router basename={process.env.PUBLIC_URL}>
         <Box sx={{ flexGrow: 1 }}>
           <AppBar position="static">
             <Toolbar>
