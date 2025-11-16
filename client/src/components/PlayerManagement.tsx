@@ -39,10 +39,12 @@ const PlayerManagement: React.FC = () => {
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
   const [matchesPerPlayer, setMatchesPerPlayer] = useState(6);
   const [createTournamentDialog, setCreateTournamentDialog] = useState(false);
+  const [hasActiveTournament, setHasActiveTournament] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     loadPlayers();
+    checkActiveTournament();
   }, []);
 
   const loadPlayers = async () => {
@@ -54,6 +56,16 @@ const PlayerManagement: React.FC = () => {
       setError('Failed to load players');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const checkActiveTournament = async () => {
+    try {
+      const tournament = await tournamentService.getCurrentTournament();
+      setHasActiveTournament(!!tournament);
+    } catch (err) {
+      // No active tournament or error - that's ok
+      setHasActiveTournament(false);
     }
   };
 
@@ -139,6 +151,26 @@ const PlayerManagement: React.FC = () => {
         <Sports sx={{ mr: 1, verticalAlign: 'middle' }} />
         Player Management
       </Typography>
+
+      {/* Active Tournament Banner */}
+      {hasActiveTournament && (
+        <Alert 
+          severity="info" 
+          sx={{ mb: 2 }}
+          action={
+            <Button 
+              color="inherit" 
+              size="small" 
+              onClick={() => navigate('/tournament')}
+              startIcon={<Sports />}
+            >
+              Resume Tournament
+            </Button>
+          }
+        >
+          <strong>You have an active tournament!</strong> Click "Resume Tournament" to continue managing your ongoing tournament.
+        </Alert>
+      )}
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
