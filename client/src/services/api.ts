@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { Player, Tournament, TournamentResults } from '../types';
+import { Player, Tournament, TournamentResults, LeaderboardEntry } from '../types';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
@@ -62,6 +62,27 @@ export const tournamentService = {
 
   getTournamentResults: async (): Promise<TournamentResults> => {
     const response = await api.get('/tournament/results');
+    return response.data;
+  },
+};
+
+export const leaderboardService = {
+  getOverallLeaderboard: async (): Promise<LeaderboardEntry[]> => {
+    const response = await api.get('/leaderboard/overall');
+    return response.data;
+  },
+
+  getMonthlyLeaderboard: async (year: number, month: number): Promise<LeaderboardEntry[]> => {
+    const response = await api.get('/leaderboard/monthly', {
+      params: { year, month },
+    });
+    return response.data;
+  },
+
+  getWeeklyLeaderboard: async (year: number, week: number): Promise<LeaderboardEntry[]> => {
+    const response = await api.get('/leaderboard/weekly', {
+      params: { year, week },
+    });
     return response.data;
   },
 };
