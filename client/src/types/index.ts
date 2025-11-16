@@ -49,3 +49,13 @@ export interface TournamentResults {
   completedFixtures: Fixture[];
 }
 
+export interface LeaderboardEntry {
+  id: string;
+  name: string;
+  skillLevel: 'beginner' | 'intermediate' | 'advanced';
+  matchesPlayed: number;
+  matchesWon: number;
+  matchesLost: number;
+  winRate: number;
+}
+
