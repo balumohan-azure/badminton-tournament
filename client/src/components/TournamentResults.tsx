@@ -85,7 +85,6 @@ const TournamentResults: React.FC = () => {
 
     // Calculate stats from completed fixtures
     completedFixtures.forEach(fixture => {
-      const allPlayers = [...fixture.team1, ...fixture.team2];
       const winners = fixture.winner === 'team1' ? fixture.team1 : fixture.team2;
       const losers = fixture.winner === 'team1' ? fixture.team2 : fixture.team1;
 
