@@ -371,38 +371,79 @@ function generateFixtures(teams, matchesPerPlayer = 6) {
     }
   }
   
-  // Shuffle the fixtures to randomize
-  const shuffledFixtures = allPossibleFixtures.sort(() => Math.random() - 0.5);
+  // Smart fixture selection: prioritize players with fewer matches
+  const shuffledFixtures = [...allPossibleFixtures].sort(() => Math.random() - 0.5);
   
-  // Add fixtures while respecting the maximum match limit
-  for (const fixture of shuffledFixtures) {
-    // Check if any player in this fixture would exceed the maximum
-    const wouldExceedMax = [...fixture.team1Pair, ...fixture.team2Pair].some(playerId => 
-      playerMatchCount.get(playerId) >= maxMatchesPerPlayer
-    );
-    
-    // Check if this combination has been used
-    const alreadyUsed = usedCombinations.has(fixture.combinationKey);
-    
-    // Only add if it doesn't exceed max and hasn't been used
-    if (!wouldExceedMax && !alreadyUsed && totalMatches < maxTotalMatches) {
-      fixtures.push({
-        id: uuidv4(),
-        team1: fixture.team1Pair,
-        team2: fixture.team2Pair,
-        status: 'pending',
-        team1Score: null,
-        team2Score: null,
-        winner: null
-      });
+  // Add fixtures while maintaining balance
+  while (shuffledFixtures.length > 0 && totalMatches < maxTotalMatches) {
+    // Sort remaining fixtures by priority (prefer fixtures with players having fewer matches)
+    shuffledFixtures.sort((a, b) => {
+      const aPlayers = [...a.team1Pair, ...a.team2Pair];
+      const bPlayers = [...b.team1Pair, ...b.team2Pair];
       
-      // Update player match counts
-      [...fixture.team1Pair, ...fixture.team2Pair].forEach(playerId => {
-        playerMatchCount.set(playerId, playerMatchCount.get(playerId) + 1);
-      });
+      const aMinCount = Math.min(...aPlayers.map(p => playerMatchCount.get(p)));
+      const bMinCount = Math.min(...bPlayers.map(p => playerMatchCount.get(p)));
       
-      usedCombinations.add(fixture.combinationKey);
-      totalMatches++;
+      // Prioritize fixtures with players who have fewer matches
+      if (aMinCount !== bMinCount) return aMinCount - bMinCount;
+      
+      // Secondary: prefer fixtures where total count is lower
+      const aTotalCount = aPlayers.reduce((sum, p) => sum + playerMatchCount.get(p), 0);
+      const bTotalCount = bPlayers.reduce((sum, p) => sum + playerMatchCount.get(p), 0);
+      return aTotalCount - bTotalCount;
+    });
+    
+    let fixtureAdded = false;
+    
+    // Try to add the highest priority fixture that doesn't violate constraints
+    for (let i = 0; i < shuffledFixtures.length; i++) {
+      const fixture = shuffledFixtures[i];
+      
+      // Check if any player in this fixture would exceed the maximum
+      const wouldExceedMax = [...fixture.team1Pair, ...fixture.team2Pair].some(playerId => 
+        playerMatchCount.get(playerId) >= maxMatchesPerPlayer
+      );
+      
+      // Check if this combination has been used
+      const alreadyUsed = usedCombinations.has(fixture.combinationKey);
+      
+      // Only add if it doesn't exceed max and hasn't been used
+      if (!wouldExceedMax && !alreadyUsed) {
+        fixtures.push({
+          id: uuidv4(),
+          team1: fixture.team1Pair,
+          team2: fixture.team2Pair,
+          status: 'pending',
+          team1Score: null,
+          team2Score: null,
+          winner: null
+        });
+        
+        // Update player match counts
+        [...fixture.team1Pair, ...fixture.team2Pair].forEach(playerId => {
+          playerMatchCount.set(playerId, playerMatchCount.get(playerId) + 1);
+        });
+        
+        usedCombinations.add(fixture.combinationKey);
+        totalMatches++;
+        
+        // Remove this fixture from the list
+        shuffledFixtures.splice(i, 1);
+        fixtureAdded = true;
+        break;
+      } else {
+        // Remove fixtures that can't be used anymore
+        if (wouldExceedMax || alreadyUsed) {
+          shuffledFixtures.splice(i, 1);
+          i--;
+        }
+      }
+    }
+    
+    // If no fixture could be added, break to avoid infinite loop
+    if (!fixtureAdded) {
+      console.log('No more valid fixtures can be added while maintaining balance');
+      break;
     }
   }
   
@@ -483,94 +524,124 @@ function generateFixtures(teams, matchesPerPlayer = 6) {
   }
   
   // Final balancing pass: ensure difference is at most 1 match between any two players
-  const minMatches = Math.min(...playerMatchCount.values());
-  const maxMatches = Math.max(...playerMatchCount.values());
+  let minMatches = Math.min(...playerMatchCount.values());
+  let maxMatches = Math.max(...playerMatchCount.values());
   
   console.log(`Initial distribution - Min: ${minMatches}, Max: ${maxMatches}, Difference: ${maxMatches - minMatches}`);
   
-  // If difference is more than 1, try to balance further
-  if (maxMatches - minMatches > 1) {
-    console.log(`Attempting to balance match distribution (current difference: ${maxMatches - minMatches})...`);
+  // Keep trying to balance until difference is at most 1
+  let balancingAttempts = 0;
+  const maxBalancingAttempts = 100; // Prevent infinite loops
+  
+  while (maxMatches - minMatches > 1 && balancingAttempts < maxBalancingAttempts) {
+    balancingAttempts++;
+    console.log(`Balancing attempt ${balancingAttempts}: Min: ${minMatches}, Max: ${maxMatches}, Difference: ${maxMatches - minMatches}`);
     
-    // Find players with min matches and players with max matches
+    // Find players with the fewest matches
     const playersWithMinMatches = [...playerMatchCount.entries()]
       .filter(([_, count]) => count === minMatches)
       .map(([playerId, _]) => playerId);
     
-    // Try to add more matches for players with minimum matches
+    let matchAdded = false;
+    
+    // Try to add matches for each player with minimum matches
     for (const playerId of playersWithMinMatches) {
       const currentCount = playerMatchCount.get(playerId);
       
-      // Stop if we've reached acceptable balance
-      if (maxMatches - currentCount <= 1) break;
-      
-      // Find a pair containing this player
+      // Find which team this player is on
       const isInTeam1 = team1.includes(playerId);
       const playerTeam = isInTeam1 ? team1 : team2;
       const opposingTeam = isInTeam1 ? team2 : team1;
       
-      // Try to find a partner for this player
-      for (const partnerId of playerTeam) {
-        if (partnerId === playerId) continue;
-        
+      // Sort potential partners by their match count (prefer partners with fewer matches)
+      const sortedPartners = playerTeam
+        .filter(pId => pId !== playerId)
+        .sort((a, b) => playerMatchCount.get(a) - playerMatchCount.get(b));
+      
+      // Try each potential partner
+      for (const partnerId of sortedPartners) {
         const partnerCount = playerMatchCount.get(partnerId);
-        if (partnerCount >= maxMatchesPerPlayer) continue;
+        
+        // Be more lenient: allow partner to have up to maxMatches (not maxMatchesPerPlayer)
+        if (partnerCount > maxMatches) continue;
         
         const pair = [playerId, partnerId];
         
-        // Try to find an opposing pair
+        // Sort potential opposing pairs by their combined match count
+        const opposingPairOptions = [];
         for (let i = 0; i < opposingTeam.length; i++) {
           for (let j = i + 1; j < opposingTeam.length; j++) {
-            const opposingPair = [opposingTeam[i], opposingTeam[j]];
+            const opp1Count = playerMatchCount.get(opposingTeam[i]);
+            const opp2Count = playerMatchCount.get(opposingTeam[j]);
             
-            // Check if opposing players haven't exceeded max
-            if (playerMatchCount.get(opposingPair[0]) >= maxMatchesPerPlayer ||
-                playerMatchCount.get(opposingPair[1]) >= maxMatchesPerPlayer) {
-              continue;
-            }
-            
-            // Check if this combination hasn't been used
-            const combinationKey = isInTeam1 ? 
-              `${pair.sort().join(',')}-${opposingPair.sort().join(',')}` :
-              `${opposingPair.sort().join(',')}-${pair.sort().join(',')}`;
-            
-            if (!usedCombinations.has(combinationKey)) {
-              // Add this fixture
-              fixtures.push({
-                id: uuidv4(),
-                team1: isInTeam1 ? pair : opposingPair,
-                team2: isInTeam1 ? opposingPair : pair,
-                status: 'pending',
-                team1Score: null,
-                team2Score: null,
-                winner: null
+            // Be more lenient here too - allow up to maxMatches
+            if (opp1Count <= maxMatches && opp2Count <= maxMatches) {
+              opposingPairOptions.push({
+                pair: [opposingTeam[i], opposingTeam[j]],
+                totalCount: opp1Count + opp2Count
               });
-              
-              // Update counts
-              [...pair, ...opposingPair].forEach(pId => {
-                playerMatchCount.set(pId, playerMatchCount.get(pId) + 1);
-              });
-              
-              usedCombinations.add(combinationKey);
-              console.log(`Added balancing match for player ${playerId}, now has ${playerMatchCount.get(playerId)} matches`);
-              
-              // Check if we've achieved balance for this player
-              if (playerMatchCount.get(playerId) >= minMatches + 1) {
-                break;
-              }
             }
           }
-          if (playerMatchCount.get(playerId) >= minMatches + 1) break;
         }
-        if (playerMatchCount.get(playerId) >= minMatches + 1) break;
+        
+        // Sort by total count (prefer pairs with fewer combined matches)
+        opposingPairOptions.sort((a, b) => a.totalCount - b.totalCount);
+        
+        // Try each opposing pair
+        for (const oppOption of opposingPairOptions) {
+          const opposingPair = oppOption.pair;
+          
+          // Check if this combination hasn't been used
+          const combinationKey = isInTeam1 ? 
+            `${[...pair].sort().join(',')}-${[...opposingPair].sort().join(',')}` :
+            `${[...opposingPair].sort().join(',')}-${[...pair].sort().join(',')}`;
+          
+          if (!usedCombinations.has(combinationKey)) {
+            // Add this fixture
+            fixtures.push({
+              id: uuidv4(),
+              team1: isInTeam1 ? pair : opposingPair,
+              team2: isInTeam1 ? opposingPair : pair,
+              status: 'pending',
+              team1Score: null,
+              team2Score: null,
+              winner: null
+            });
+            
+            // Update counts
+            [...pair, ...opposingPair].forEach(pId => {
+              playerMatchCount.set(pId, playerMatchCount.get(pId) + 1);
+            });
+            
+            usedCombinations.add(combinationKey);
+            console.log(`Added balancing match for player ${playerId}, now has ${playerMatchCount.get(playerId)} matches`);
+            
+            matchAdded = true;
+            break; // Move to next player with min matches
+          }
+        }
+        
+        if (matchAdded) break; // Move to next player
       }
+      
+      if (matchAdded) break; // Recalculate min/max and try again
     }
     
-    // Recalculate min/max after balancing
-    const finalMinMatches = Math.min(...playerMatchCount.values());
-    const finalMaxMatches = Math.max(...playerMatchCount.values());
-    console.log(`After balancing - Min: ${finalMinMatches}, Max: ${finalMaxMatches}, Difference: ${finalMaxMatches - finalMinMatches}`);
+    // If we couldn't add any match, we're stuck - break out
+    if (!matchAdded) {
+      console.log('Could not find any valid match to add for balancing');
+      break;
+    }
+    
+    // Recalculate min/max after adding matches
+    minMatches = Math.min(...playerMatchCount.values());
+    maxMatches = Math.max(...playerMatchCount.values());
   }
+  
+  // Final stats
+  const finalMinMatches = Math.min(...playerMatchCount.values());
+  const finalMaxMatches = Math.max(...playerMatchCount.values());
+  console.log(`After balancing (${balancingAttempts} attempts) - Min: ${finalMinMatches}, Max: ${finalMaxMatches}, Difference: ${finalMaxMatches - finalMinMatches}`);
   
   console.log(`Generated ${fixtures.length} matches with guaranteed balanced player participation`);
   console.log(`Target matches per player: ${targetMatchesPerPlayer}, Max matches per player: ${maxMatchesPerPlayer}`);
