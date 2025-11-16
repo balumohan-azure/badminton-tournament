@@ -106,7 +106,7 @@ const TournamentResults: React.FC = () => {
     );
   }
 
-  const { tournament, teamStats, champion, completedFixtures } = results;
+  const { tournament, teamStats, champion, completedFixtures, players } = results;
 
   return (
     <Box>
@@ -206,13 +206,13 @@ const TournamentResults: React.FC = () => {
                   
                   <Box sx={{ mb: 1 }}>
                     <Typography variant="body2" color="text.secondary">
-                      {getPlayerName(fixture.team1[0], [])} & {getPlayerName(fixture.team1[1], [])}
+                      {getPlayerName(fixture.team1[0], players)} & {getPlayerName(fixture.team1[1], players)}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" align="center">
                       vs
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {getPlayerName(fixture.team2[0], [])} & {getPlayerName(fixture.team2[1], [])}
+                      {getPlayerName(fixture.team2[0], players)} & {getPlayerName(fixture.team2[1], players)}
                     </Typography>
                   </Box>
 
