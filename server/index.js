@@ -289,8 +289,9 @@ async function createBalancedTeams(players, matchesPerPlayer = 6) {
     3. Each team should have similar total skill distribution
     4. Consider that each player should get approximately ${matchesPerPlayer} matches
     5. Create teams that allow for diverse pairings and avoid repetitive matchups
-    6. Ensure all players get fair playing time
-    7. Return only the team assignments in this JSON format:
+    6. CRITICAL: Ensure ALL players get fair playing time - the difference in number of matches between any two players MUST be at most 1 match (e.g., if some players get 6 matches, no player should get fewer than 5 or more than 7)
+    7. Optimize team composition to enable balanced match distribution where every player participates in a similar number of matches
+    8. Return only the team assignments in this JSON format:
     {
       "team1": ["player1_name", "player2_name", ...],
       "team2": ["player3_name", "player4_name", ...]
@@ -406,8 +407,9 @@ function generateFixtures(teams, matchesPerPlayer = 6) {
   }
   
   // Ensure minimum participation for players with very few matches
+  // Changed from targetMatchesPerPlayer - 2 to - 1 to enforce stricter balance
   const playersWithFewMatches = [...playerMatchCount.entries()]
-    .filter(([_, count]) => count < Math.max(1, targetMatchesPerPlayer - 2))
+    .filter(([_, count]) => count < Math.max(1, targetMatchesPerPlayer - 1))
     .map(([playerId, _]) => playerId);
   
   if (playersWithFewMatches.length > 0) {
@@ -478,6 +480,96 @@ function generateFixtures(teams, matchesPerPlayer = 6) {
         }
       }
     }
+  }
+  
+  // Final balancing pass: ensure difference is at most 1 match between any two players
+  const minMatches = Math.min(...playerMatchCount.values());
+  const maxMatches = Math.max(...playerMatchCount.values());
+  
+  console.log(`Initial distribution - Min: ${minMatches}, Max: ${maxMatches}, Difference: ${maxMatches - minMatches}`);
+  
+  // If difference is more than 1, try to balance further
+  if (maxMatches - minMatches > 1) {
+    console.log(`Attempting to balance match distribution (current difference: ${maxMatches - minMatches})...`);
+    
+    // Find players with min matches and players with max matches
+    const playersWithMinMatches = [...playerMatchCount.entries()]
+      .filter(([_, count]) => count === minMatches)
+      .map(([playerId, _]) => playerId);
+    
+    // Try to add more matches for players with minimum matches
+    for (const playerId of playersWithMinMatches) {
+      const currentCount = playerMatchCount.get(playerId);
+      
+      // Stop if we've reached acceptable balance
+      if (maxMatches - currentCount <= 1) break;
+      
+      // Find a pair containing this player
+      const isInTeam1 = team1.includes(playerId);
+      const playerTeam = isInTeam1 ? team1 : team2;
+      const opposingTeam = isInTeam1 ? team2 : team1;
+      
+      // Try to find a partner for this player
+      for (const partnerId of playerTeam) {
+        if (partnerId === playerId) continue;
+        
+        const partnerCount = playerMatchCount.get(partnerId);
+        if (partnerCount >= maxMatchesPerPlayer) continue;
+        
+        const pair = [playerId, partnerId];
+        
+        // Try to find an opposing pair
+        for (let i = 0; i < opposingTeam.length; i++) {
+          for (let j = i + 1; j < opposingTeam.length; j++) {
+            const opposingPair = [opposingTeam[i], opposingTeam[j]];
+            
+            // Check if opposing players haven't exceeded max
+            if (playerMatchCount.get(opposingPair[0]) >= maxMatchesPerPlayer ||
+                playerMatchCount.get(opposingPair[1]) >= maxMatchesPerPlayer) {
+              continue;
+            }
+            
+            // Check if this combination hasn't been used
+            const combinationKey = isInTeam1 ? 
+              `${pair.sort().join(',')}-${opposingPair.sort().join(',')}` :
+              `${opposingPair.sort().join(',')}-${pair.sort().join(',')}`;
+            
+            if (!usedCombinations.has(combinationKey)) {
+              // Add this fixture
+              fixtures.push({
+                id: uuidv4(),
+                team1: isInTeam1 ? pair : opposingPair,
+                team2: isInTeam1 ? opposingPair : pair,
+                status: 'pending',
+                team1Score: null,
+                team2Score: null,
+                winner: null
+              });
+              
+              // Update counts
+              [...pair, ...opposingPair].forEach(pId => {
+                playerMatchCount.set(pId, playerMatchCount.get(pId) + 1);
+              });
+              
+              usedCombinations.add(combinationKey);
+              console.log(`Added balancing match for player ${playerId}, now has ${playerMatchCount.get(playerId)} matches`);
+              
+              // Check if we've achieved balance for this player
+              if (playerMatchCount.get(playerId) >= minMatches + 1) {
+                break;
+              }
+            }
+          }
+          if (playerMatchCount.get(playerId) >= minMatches + 1) break;
+        }
+        if (playerMatchCount.get(playerId) >= minMatches + 1) break;
+      }
+    }
+    
+    // Recalculate min/max after balancing
+    const finalMinMatches = Math.min(...playerMatchCount.values());
+    const finalMaxMatches = Math.max(...playerMatchCount.values());
+    console.log(`After balancing - Min: ${finalMinMatches}, Max: ${finalMaxMatches}, Difference: ${finalMaxMatches - finalMinMatches}`);
   }
   
   console.log(`Generated ${fixtures.length} matches with guaranteed balanced player participation`);
