@@ -3,7 +3,6 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { v4: uuidv4 } = require('uuid');
-const { createClient } = require('@supabase/supabase-js');
 
 dotenv.config();
 
@@ -17,104 +16,50 @@ app.use(express.json());
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Initialize Supabase
-const supabase = createClient(
-  process.env.SUPABASE_URL || '',
-  process.env.SUPABASE_ANON_KEY || ''
-);
-
-// In-memory cache for active tournament (will be replaced with DB queries)
+// In-memory storage (in production, use a database)
+let players = [];
+let tournaments = [];
 let currentTournament = null;
 
 // Player Management Routes
-app.get('/api/players', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('players')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
-    if (error) throw error;
-    
-    // Transform to match frontend expectations
-    const players = data.map(p => ({
-      id: p.id,
-      name: p.name,
-      skillLevel: p.skill_level,
-      matchesPlayed: 0, // Will be calculated from player_statistics view
-      matchesWon: 0 // Will be calculated from player_statistics view
-    }));
-    
-    res.json(players);
-  } catch (error) {
-    console.error('Error fetching players:', error);
-    res.status(500).json({ error: 'Failed to fetch players' });
-  }
+app.get('/api/players', (req, res) => {
+  res.json(players);
 });
 
-app.post('/api/players', async (req, res) => {
-  try {
-    const { name, skillLevel } = req.body;
-    
-    if (!name || !skillLevel) {
-      return res.status(400).json({ error: 'Name and skill level are required' });
-    }
-
-    const validSkillLevels = ['beginner', 'intermediate', 'advanced'];
-    if (!validSkillLevels.includes(skillLevel.toLowerCase())) {
-      return res.status(400).json({ error: 'Invalid skill level. Must be beginner, intermediate, or advanced' });
-    }
-
-    const { data, error } = await supabase
-      .from('players')
-      .insert([
-        {
-          name,
-          skill_level: skillLevel.toLowerCase()
-        }
-      ])
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === '23505') { // Unique violation
-        return res.status(400).json({ error: 'Player name already exists' });
-      }
-      throw error;
-    }
-
-    // Transform to match frontend expectations
-    const player = {
-      id: data.id,
-      name: data.name,
-      skillLevel: data.skill_level,
-      matchesPlayed: 0,
-      matchesWon: 0
-    };
-
-    res.status(201).json(player);
-  } catch (error) {
-    console.error('Error creating player:', error);
-    res.status(500).json({ error: 'Failed to create player' });
+app.post('/api/players', (req, res) => {
+  const { name, skillLevel } = req.body;
+  
+  if (!name || !skillLevel) {
+    return res.status(400).json({ error: 'Name and skill level are required' });
   }
+
+  const validSkillLevels = ['beginner', 'intermediate', 'advanced'];
+  if (!validSkillLevels.includes(skillLevel.toLowerCase())) {
+    return res.status(400).json({ error: 'Invalid skill level. Must be beginner, intermediate, or advanced' });
+  }
+
+  const player = {
+    id: uuidv4(),
+    name,
+    skillLevel: skillLevel.toLowerCase(),
+    matchesPlayed: 0,
+    matchesWon: 0
+  };
+
+  players.push(player);
+  res.status(201).json(player);
 });
 
-app.delete('/api/players/:id', async (req, res) => {
-  try {
-    const playerId = req.params.id;
-    
-    const { error } = await supabase
-      .from('players')
-      .delete()
-      .eq('id', playerId);
-    
-    if (error) throw error;
-    
-    res.json({ message: 'Player deleted successfully' });
-  } catch (error) {
-    console.error('Error deleting player:', error);
-    res.status(500).json({ error: 'Failed to delete player' });
+app.delete('/api/players/:id', (req, res) => {
+  const playerId = req.params.id;
+  const playerIndex = players.findIndex(p => p.id === playerId);
+  
+  if (playerIndex === -1) {
+    return res.status(404).json({ error: 'Player not found' });
   }
+
+  players.splice(playerIndex, 1);
+  res.json({ message: 'Player deleted successfully' });
 });
 
 // Tournament Management Routes
@@ -130,24 +75,12 @@ app.post('/api/tournament/create', async (req, res) => {
       return res.status(400).json({ error: 'At least 4 players are required for a tournament' });
     }
 
-    // Get selected players from database
-    const { data: playersData, error: playersError } = await supabase
-      .from('players')
-      .select('*')
-      .in('id', playerIds);
+    // Get selected players
+    const selectedPlayers = players.filter(p => playerIds.includes(p.id));
     
-    if (playersError) throw playersError;
-    
-    if (playersData.length !== playerIds.length) {
+    if (selectedPlayers.length !== playerIds.length) {
       return res.status(400).json({ error: 'Some selected players not found' });
     }
-
-    // Transform to match expected format
-    const selectedPlayers = playersData.map(p => ({
-      id: p.id,
-      name: p.name,
-      skillLevel: p.skill_level
-    }));
 
     // Use AI to create balanced teams
     const teams = await createBalancedTeams(selectedPlayers, matchesPerPlayer);
@@ -155,48 +88,13 @@ app.post('/api/tournament/create', async (req, res) => {
     // Generate fixtures with custom matches per player
     const fixtures = generateFixtures(teams, matchesPerPlayer);
 
-    // Create tournament in database
-    const { data: tournament, error: tournamentError } = await supabase
-      .from('tournaments')
-      .insert([
-        {
-          matches_per_player: matchesPerPlayer,
-          status: 'active'
-        }
-      ])
-      .select()
-      .single();
-
-    if (tournamentError) throw tournamentError;
-
-    // Store matches in database
-    const matchesData = fixtures.map(fixture => ({
-      id: fixture.id,
-      tournament_id: tournament.id,
-      team1_player1_id: fixture.team1[0],
-      team1_player2_id: fixture.team1[1],
-      team2_player1_id: fixture.team2[0],
-      team2_player2_id: fixture.team2[1],
-      team1_score: null,
-      team2_score: null,
-      winner_team: null,
-      status: 'pending'
-    }));
-
-    const { error: matchesError } = await supabase
-      .from('matches')
-      .insert(matchesData);
-
-    if (matchesError) throw matchesError;
-
-    // Cache in memory for quick access
     currentTournament = {
-      id: tournament.id,
+      id: uuidv4(),
       teams,
       fixtures,
       matchesPerPlayer,
       status: 'active',
-      createdAt: tournament.created_at
+      createdAt: new Date().toISOString()
     };
 
     console.log(`Tournament created with ${fixtures.length} matches`);
@@ -314,52 +212,49 @@ app.post('/api/tournament/swap-players', async (req, res) => {
   }
 });
 
-app.post('/api/tournament/score', async (req, res) => {
-  try {
-    const { fixtureId, team1Score, team2Score } = req.body;
-    
-    if (!currentTournament) {
-      return res.status(400).json({ error: 'No active tournament' });
-    }
-
-    const fixture = currentTournament.fixtures.find(f => f.id === fixtureId);
-    if (!fixture) {
-      return res.status(404).json({ error: 'Fixture not found' });
-    }
-
-    if (fixture.status !== 'pending') {
-      return res.status(400).json({ error: 'Fixture already completed' });
-    }
-
-    // Determine winner
-    const winnerTeam = team1Score > team2Score ? 1 : 2;
-
-    // Update match in database
-    const { error: updateError } = await supabase
-      .from('matches')
-      .update({
-        team1_score: team1Score,
-        team2_score: team2Score,
-        winner_team: winnerTeam,
-        status: 'completed',
-        played_at: new Date().toISOString()
-      })
-      .eq('id', fixtureId);
-
-    if (updateError) throw updateError;
-
-    // Update fixture in memory
-    fixture.status = 'completed';
-    fixture.team1Score = team1Score;
-    fixture.team2Score = team2Score;
-    fixture.winner = team1Score > team2Score ? 'team1' : 'team2';
-    fixture.completedAt = new Date().toISOString();
-
-    res.json(fixture);
-  } catch (error) {
-    console.error('Error updating score:', error);
-    res.status(500).json({ error: 'Failed to update score' });
+app.post('/api/tournament/score', (req, res) => {
+  const { fixtureId, team1Score, team2Score } = req.body;
+  
+  if (!currentTournament) {
+    return res.status(400).json({ error: 'No active tournament' });
   }
+
+  const fixture = currentTournament.fixtures.find(f => f.id === fixtureId);
+  if (!fixture) {
+    return res.status(404).json({ error: 'Fixture not found' });
+  }
+
+  if (fixture.status !== 'pending') {
+    return res.status(400).json({ error: 'Fixture already completed' });
+  }
+
+  // Update fixture
+  fixture.status = 'completed';
+  fixture.team1Score = team1Score;
+  fixture.team2Score = team2Score;
+  fixture.winner = team1Score > team2Score ? 'team1' : 'team2';
+  fixture.completedAt = new Date().toISOString();
+
+  // Update player statistics
+  const winningTeam = fixture.winner === 'team1' ? fixture.team1 : fixture.team2;
+  const losingTeam = fixture.winner === 'team1' ? fixture.team2 : fixture.team1;
+
+  winningTeam.forEach(playerId => {
+    const player = players.find(p => p.id === playerId);
+    if (player) {
+      player.matchesPlayed++;
+      player.matchesWon++;
+    }
+  });
+
+  losingTeam.forEach(playerId => {
+    const player = players.find(p => p.id === playerId);
+    if (player) {
+      player.matchesPlayed++;
+    }
+  });
+
+  res.json(fixture);
 });
 
 app.get('/api/tournament/results', (req, res) => {
@@ -369,109 +264,14 @@ app.get('/api/tournament/results', (req, res) => {
 
   const completedFixtures = currentTournament.fixtures.filter(f => f.status === 'completed');
   const teamStats = calculateTeamStats(currentTournament.teams, completedFixtures);
+  const champion = findChampion(players);
 
   res.json({
     tournament: currentTournament,
     teamStats,
+    champion,
     completedFixtures
   });
-});
-
-// Leaderboard Routes
-app.get('/api/leaderboard/overall', async (req, res) => {
-  try {
-    const { data, error } = await supabase
-      .from('player_statistics')
-      .select('*')
-      .order('win_rate', { ascending: false })
-      .order('matches_won', { ascending: false });
-    
-    if (error) throw error;
-    
-    // Transform to camelCase for frontend
-    const leaderboard = data.map(player => ({
-      id: player.id,
-      name: player.name,
-      skillLevel: player.skill_level,
-      matchesPlayed: player.matches_played,
-      matchesWon: player.matches_won,
-      matchesLost: player.matches_lost,
-      winRate: player.win_rate
-    }));
-    
-    res.json(leaderboard);
-  } catch (error) {
-    console.error('Error fetching overall leaderboard:', error);
-    res.status(500).json({ error: 'Failed to fetch leaderboard' });
-  }
-});
-
-app.get('/api/leaderboard/monthly', async (req, res) => {
-  try {
-    const { year, month } = req.query;
-    
-    if (!year || !month) {
-      return res.status(400).json({ error: 'Year and month parameters are required' });
-    }
-    
-    const { data, error } = await supabase
-      .rpc('get_monthly_leaderboard', {
-        year_param: parseInt(year),
-        month_param: parseInt(month)
-      });
-    
-    if (error) throw error;
-    
-    // Transform to camelCase for frontend
-    const leaderboard = data.map(player => ({
-      id: player.id,
-      name: player.name,
-      skillLevel: player.skill_level,
-      matchesPlayed: player.matches_played,
-      matchesWon: player.matches_won,
-      matchesLost: player.matches_lost,
-      winRate: player.win_rate
-    }));
-    
-    res.json(leaderboard);
-  } catch (error) {
-    console.error('Error fetching monthly leaderboard:', error);
-    res.status(500).json({ error: 'Failed to fetch monthly leaderboard' });
-  }
-});
-
-app.get('/api/leaderboard/weekly', async (req, res) => {
-  try {
-    const { year, week } = req.query;
-    
-    if (!year || !week) {
-      return res.status(400).json({ error: 'Year and week parameters are required' });
-    }
-    
-    const { data, error } = await supabase
-      .rpc('get_weekly_leaderboard', {
-        year_param: parseInt(year),
-        week_param: parseInt(week)
-      });
-    
-    if (error) throw error;
-    
-    // Transform to camelCase for frontend
-    const leaderboard = data.map(player => ({
-      id: player.id,
-      name: player.name,
-      skillLevel: player.skill_level,
-      matchesPlayed: player.matches_played,
-      matchesWon: player.matches_won,
-      matchesLost: player.matches_lost,
-      winRate: player.win_rate
-    }));
-    
-    res.json(leaderboard);
-  } catch (error) {
-    console.error('Error fetching weekly leaderboard:', error);
-    res.status(500).json({ error: 'Failed to fetch weekly leaderboard' });
-  }
 });
 
 // AI-powered team creation
@@ -918,4 +718,3 @@ app.get('/api/test-fixtures', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
