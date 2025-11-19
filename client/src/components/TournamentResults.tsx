@@ -13,27 +13,11 @@ import {
   ListItemText,
   Divider,
   Avatar,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
 } from '@mui/material';
-import { EmojiEvents, Sports, ArrowBack, Leaderboard } from '@mui/icons-material';
+import { EmojiEvents, Sports, ArrowBack } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { TournamentResults as TournamentResultsType, Player } from '../types';
 import { tournamentService } from '../services/api';
-
-interface PlayerStats {
-  id: string;
-  name: string;
-  skillLevel: string;
-  matchesPlayed: number;
-  matchesWon: number;
-  matchesLost: number;
-  winRate: number;
-}
 
 const TournamentResults: React.FC = () => {
   const [results, setResults] = useState<TournamentResultsType | null>(null);
@@ -68,67 +52,6 @@ const TournamentResults: React.FC = () => {
       case 'advanced': return 'error';
       default: return 'default';
     }
-  };
-
-  const calculateTournamentLeaderboard = (): PlayerStats[] => {
-    if (!results) return [];
-
-    const { completedFixtures, players } = results;
-    if (completedFixtures.length === 0) return [];
-
-    const stats = new Map<string, { wins: number; losses: number; played: number }>();
-
-    // Initialize stats for all players
-    players.forEach((player: Player) => {
-      stats.set(player.id, { wins: 0, losses: 0, played: 0 });
-    });
-
-    // Calculate stats from completed fixtures
-    completedFixtures.forEach(fixture => {
-      const winners = fixture.winner === 'team1' ? fixture.team1 : fixture.team2;
-      const losers = fixture.winner === 'team1' ? fixture.team2 : fixture.team1;
-
-      winners.forEach((playerId: string) => {
-        const stat = stats.get(playerId);
-        if (stat) {
-          stat.wins++;
-          stat.played++;
-        }
-      });
-
-      losers.forEach((playerId: string) => {
-        const stat = stats.get(playerId);
-        if (stat) {
-          stat.losses++;
-          stat.played++;
-        }
-      });
-    });
-
-    // Convert to leaderboard entries
-    const entries: PlayerStats[] = [];
-    players.forEach((player: Player) => {
-      const stat = stats.get(player.id);
-      if (stat && stat.played > 0) {
-        entries.push({
-          id: player.id,
-          name: player.name,
-          skillLevel: player.skillLevel,
-          matchesPlayed: stat.played,
-          matchesWon: stat.wins,
-          matchesLost: stat.losses,
-          winRate: stat.played > 0 ? parseFloat(((stat.wins / stat.played) * 100).toFixed(2)) : 0
-        });
-      }
-    });
-
-    // Sort by win rate, then by wins
-    entries.sort((a, b) => {
-      if (b.winRate !== a.winRate) return b.winRate - a.winRate;
-      return b.matchesWon - a.matchesWon;
-    });
-
-    return entries;
   };
 
   if (loading) {
@@ -307,85 +230,6 @@ const TournamentResults: React.FC = () => {
               </Box>
             ))}
           </Box>
-        </CardContent>
-      </Card>
-
-      {/* Player Leaderboard */}
-      <Card sx={{ mb: 3 }}>
-        <CardContent>
-          <Typography variant="h6" gutterBottom>
-            <Leaderboard sx={{ mr: 1, verticalAlign: 'middle' }} />
-            Player Leaderboard (Tournament Stats)
-          </Typography>
-          <Divider sx={{ mb: 2 }} />
-          {calculateTournamentLeaderboard().length > 0 ? (
-            <TableContainer>
-              <Table>
-                <TableHead>
-                  <TableRow>
-                    <TableCell><strong>Rank</strong></TableCell>
-                    <TableCell><strong>Player</strong></TableCell>
-                    <TableCell align="center"><strong>Skill Level</strong></TableCell>
-                    <TableCell align="center"><strong>Matches</strong></TableCell>
-                    <TableCell align="center"><strong>Wins</strong></TableCell>
-                    <TableCell align="center"><strong>Losses</strong></TableCell>
-                    <TableCell align="center"><strong>Win Rate</strong></TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {calculateTournamentLeaderboard().map((player, index) => (
-                    <TableRow 
-                      key={player.id}
-                      sx={{ 
-                        bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? '#cd7f32' : 'inherit',
-                        '&:hover': { bgcolor: 'action.hover' }
-                      }}
-                    >
-                      <TableCell>
-                        {index === 0 && <span>🥇</span>}
-                        {index === 1 && <span>🥈</span>}
-                        {index === 2 && <span>🥉</span>}
-                        {index > 2 && <span>{index + 1}</span>}
-                      </TableCell>
-                      <TableCell>
-                        <Typography variant="body1" fontWeight={index < 3 ? 'bold' : 'normal'}>
-                          {player.name}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
-                          label={player.skillLevel}
-                          color={getSkillLevelColor(player.skillLevel) as any}
-                          size="small"
-                        />
-                      </TableCell>
-                      <TableCell align="center">{player.matchesPlayed}</TableCell>
-                      <TableCell align="center">
-                        <Typography color="success.main" fontWeight="medium">
-                          {player.matchesWon}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Typography color="error.main">
-                          {player.matchesLost}
-                        </Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
-                          label={`${player.winRate}%`}
-                          color={player.winRate >= 70 ? 'success' : player.winRate >= 50 ? 'warning' : 'error'}
-                          size="small"
-                          variant="outlined"
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          ) : (
-            <Alert severity="info">No matches completed in this tournament yet.</Alert>
-          )}
         </CardContent>
       </Card>
 
