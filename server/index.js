@@ -327,9 +327,8 @@ app.post('/api/tournament/score', async (req, res) => {
       return res.status(404).json({ error: 'Fixture not found' });
     }
 
-    if (fixture.status !== 'pending') {
-      return res.status(400).json({ error: 'Fixture already completed' });
-    }
+    // Allow re-scoring of completed matches for corrections
+    // No longer blocking if status is 'completed'
 
     // Determine winner
     const winnerTeam = team1Score > team2Score ? 1 : 2;
@@ -362,45 +361,19 @@ app.post('/api/tournament/score', async (req, res) => {
   }
 });
 
-app.get('/api/tournament/results', async (req, res) => {
-  try {
-    if (!currentTournament) {
-      return res.status(400).json({ error: 'No active tournament' });
-    }
-
-    const completedFixtures = currentTournament.fixtures.filter(f => f.status === 'completed');
-    const teamStats = calculateTeamStats(currentTournament.teams, completedFixtures);
-
-    // Get all player IDs from the tournament
-    const allPlayerIds = [...currentTournament.teams.team1, ...currentTournament.teams.team2];
-
-    // Fetch player details from database
-    const { data: playersData, error: playersError } = await supabase
-      .from('players')
-      .select('*')
-      .in('id', allPlayerIds);
-
-    if (playersError) throw playersError;
-
-    // Transform to match frontend expectations
-    const players = playersData.map(p => ({
-      id: p.id,
-      name: p.name,
-      skillLevel: p.skill_level,
-      matchesPlayed: 0,
-      matchesWon: 0
-    }));
-
-    res.json({
-      tournament: currentTournament,
-      teamStats,
-      completedFixtures,
-      players
-    });
-  } catch (error) {
-    console.error('Error fetching tournament results:', error);
-    res.status(500).json({ error: 'Failed to fetch tournament results' });
+app.get('/api/tournament/results', (req, res) => {
+  if (!currentTournament) {
+    return res.status(400).json({ error: 'No active tournament' });
   }
+
+  const completedFixtures = currentTournament.fixtures.filter(f => f.status === 'completed');
+  const teamStats = calculateTeamStats(currentTournament.teams, completedFixtures);
+
+  res.json({
+    tournament: currentTournament,
+    teamStats,
+    completedFixtures
+  });
 });
 
 // Leaderboard Routes
