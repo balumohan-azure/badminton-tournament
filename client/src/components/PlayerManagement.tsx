@@ -37,14 +37,12 @@ const PlayerManagement: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [newPlayer, setNewPlayer] = useState({ name: '', skillLevel: 'beginner' });
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
-  const [matchesPerPlayer, setMatchesPerPlayer] = useState(6);
+  const [matchesPerPlayer, setMatchesPerPlayer] = useState(5);
   const [createTournamentDialog, setCreateTournamentDialog] = useState(false);
-  const [hasActiveTournament, setHasActiveTournament] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     loadPlayers();
-    checkActiveTournament();
   }, []);
 
   const loadPlayers = async () => {
@@ -56,16 +54,6 @@ const PlayerManagement: React.FC = () => {
       setError('Failed to load players');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const checkActiveTournament = async () => {
-    try {
-      const tournament = await tournamentService.getCurrentTournament();
-      setHasActiveTournament(!!tournament);
-    } catch (err) {
-      // No active tournament or error - that's ok
-      setHasActiveTournament(false);
     }
   };
 
@@ -152,26 +140,6 @@ const PlayerManagement: React.FC = () => {
         Player Management
       </Typography>
 
-      {/* Active Tournament Banner */}
-      {hasActiveTournament && (
-        <Alert 
-          severity="info" 
-          sx={{ mb: 2 }}
-          action={
-            <Button 
-              color="inherit" 
-              size="small" 
-              onClick={() => navigate('/tournament')}
-              startIcon={<Sports />}
-            >
-              Resume Tournament
-            </Button>
-          }
-        >
-          <strong>You have an active tournament!</strong> Click "Resume Tournament" to continue managing your ongoing tournament.
-        </Alert>
-      )}
-
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
 
@@ -233,8 +201,24 @@ const PlayerManagement: React.FC = () => {
                     label="Matches per Player"
                     type="number"
                     value={matchesPerPlayer}
-                    onChange={(e) => setMatchesPerPlayer(parseInt(e.target.value) || 6)}
-                    inputProps={{ min: 2, max: 12 }}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '') {
+                        setMatchesPerPlayer(5);
+                      } else {
+                        const num = parseInt(val);
+                        if (!isNaN(num) && num >= 2 && num <= 12) {
+                          setMatchesPerPlayer(num);
+                        }
+                      }
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    inputProps={{ 
+                      min: 2, 
+                      max: 12,
+                      inputMode: 'numeric',
+                      pattern: '[0-9]*'
+                    }}
                     sx={{ width: 150 }}
                   />
                   <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }}>
