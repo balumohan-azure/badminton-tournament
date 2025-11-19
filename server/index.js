@@ -327,8 +327,9 @@ app.post('/api/tournament/score', async (req, res) => {
       return res.status(404).json({ error: 'Fixture not found' });
     }
 
-    // Allow re-scoring of completed matches for corrections
-    // No longer blocking if status is 'completed'
+    if (fixture.status !== 'pending') {
+      return res.status(400).json({ error: 'Fixture already completed' });
+    }
 
     // Determine winner
     const winnerTeam = team1Score > team2Score ? 1 : 2;
@@ -476,7 +477,7 @@ app.get('/api/leaderboard/weekly', async (req, res) => {
 // AI-powered team creation
 async function createBalancedTeams(players, matchesPerPlayer = 6) {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     const prompt = `
     Create balanced teams for a badminton doubles tournament from these players:
