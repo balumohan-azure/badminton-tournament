@@ -45,7 +45,7 @@ export interface TeamStats {
 export interface TournamentResults {
   tournament: Tournament;
   teamStats: TeamStats;
-  champion?: Player | null;
+  champion: Player | null;
   completedFixtures: Fixture[];
   players: Player[];
 }
