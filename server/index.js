@@ -497,7 +497,7 @@ app.get('/api/leaderboard/weekly', async (req, res) => {
 // AI-powered team creation
 async function createBalancedTeams(players, matchesPerPlayer = 6) {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     
     const prompt = `
     Create balanced teams for a badminton doubles tournament from these players:
