@@ -19,27 +19,30 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Tabs,
-  Tab,
 } from '@mui/material';
-import { EmojiEvents, Sports, ArrowBack, Leaderboard, CalendarMonth, Timeline } from '@mui/icons-material';
+import { EmojiEvents, Sports, ArrowBack, Leaderboard } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { TournamentResults as TournamentResultsType, Player, LeaderboardEntry } from '../types';
-import { tournamentService, leaderboardService } from '../services/api';
+import { TournamentResults as TournamentResultsType, Player } from '../types';
+import { tournamentService } from '../services/api';
+
+interface PlayerStats {
+  id: string;
+  name: string;
+  skillLevel: string;
+  matchesPlayed: number;
+  matchesWon: number;
+  matchesLost: number;
+  winRate: number;
+}
 
 const TournamentResults: React.FC = () => {
   const [results, setResults] = useState<TournamentResultsType | null>(null);
-  const [tournamentLeaderboard, setTournamentLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [monthlyLeaderboard, setMonthlyLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [overallLeaderboard, setOverallLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [leaderboardTab, setLeaderboardTab] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     loadResults();
-    loadAllLeaderboards();
   }, []);
 
   const loadResults = async () => {
@@ -54,32 +57,29 @@ const TournamentResults: React.FC = () => {
     }
   };
 
-  const loadAllLeaderboards = async () => {
-    try {
-      // Load overall leaderboard
-      const overall = await leaderboardService.getOverallLeaderboard();
-      setOverallLeaderboard(overall);
+  const getPlayerName = (playerId: string, players: Player[]) => {
+    return players.find(p => p.id === playerId)?.name || 'Unknown Player';
+  };
 
-      // Load monthly leaderboard
-      const now = new Date();
-      const monthly = await leaderboardService.getMonthlyLeaderboard(
-        now.getFullYear(),
-        now.getMonth() + 1
-      );
-      setMonthlyLeaderboard(monthly);
-    } catch (err) {
-      console.error('Failed to load leaderboards:', err);
+  const getSkillLevelColor = (level: string) => {
+    switch (level) {
+      case 'beginner': return 'success';
+      case 'intermediate': return 'warning';
+      case 'advanced': return 'error';
+      default: return 'default';
     }
   };
 
-  const calculateTournamentLeaderboard = (
-    completedFixtures: any[],
-    players: Player[]
-  ): LeaderboardEntry[] => {
+  const calculateTournamentLeaderboard = (): PlayerStats[] => {
+    if (!results) return [];
+
+    const { completedFixtures, players } = results;
+    if (completedFixtures.length === 0) return [];
+
     const stats = new Map<string, { wins: number; losses: number; played: number }>();
 
     // Initialize stats for all players
-    players.forEach(player => {
+    players.forEach((player: Player) => {
       stats.set(player.id, { wins: 0, losses: 0, played: 0 });
     });
 
@@ -106,8 +106,8 @@ const TournamentResults: React.FC = () => {
     });
 
     // Convert to leaderboard entries
-    const entries: LeaderboardEntry[] = [];
-    players.forEach(player => {
+    const entries: PlayerStats[] = [];
+    players.forEach((player: Player) => {
       const stat = stats.get(player.id);
       if (stat && stat.played > 0) {
         entries.push({
@@ -129,29 +129,6 @@ const TournamentResults: React.FC = () => {
     });
 
     return entries;
-  };
-
-  useEffect(() => {
-    if (results && results.players) {
-      const tournamentStats = calculateTournamentLeaderboard(
-        results.completedFixtures,
-        results.players
-      );
-      setTournamentLeaderboard(tournamentStats);
-    }
-  }, [results]);
-
-  const getPlayerName = (playerId: string, players: Player[]) => {
-    return players.find(p => p.id === playerId)?.name || 'Unknown Player';
-  };
-
-  const getSkillLevelColor = (level: string) => {
-    switch (level) {
-      case 'beginner': return 'success';
-      case 'intermediate': return 'warning';
-      case 'advanced': return 'error';
-      default: return 'default';
-    }
   };
 
   if (loading) {
@@ -206,7 +183,7 @@ const TournamentResults: React.FC = () => {
     );
   }
 
-  const { tournament, teamStats, champion, completedFixtures } = results;
+  const { tournament, teamStats, champion, completedFixtures, players } = results;
 
   return (
     <Box>
@@ -306,13 +283,13 @@ const TournamentResults: React.FC = () => {
                   
                   <Box sx={{ mb: 1 }}>
                     <Typography variant="body2" color="text.secondary">
-                      {getPlayerName(fixture.team1[0], [])} & {getPlayerName(fixture.team1[1], [])}
+                      {getPlayerName(fixture.team1[0], players)} & {getPlayerName(fixture.team1[1], players)}
                     </Typography>
                     <Typography variant="body2" color="text.secondary" align="center">
                       vs
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {getPlayerName(fixture.team2[0], [])} & {getPlayerName(fixture.team2[1], [])}
+                      {getPlayerName(fixture.team2[0], players)} & {getPlayerName(fixture.team2[1], players)}
                     </Typography>
                   </Box>
 
@@ -333,258 +310,81 @@ const TournamentResults: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Player Leaderboard with Tabs */}
+      {/* Player Leaderboard */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
           <Typography variant="h6" gutterBottom>
             <Leaderboard sx={{ mr: 1, verticalAlign: 'middle' }} />
-            Player Leaderboard
+            Player Leaderboard (Tournament Stats)
           </Typography>
-          
-          <Tabs 
-            value={leaderboardTab} 
-            onChange={(e, newValue) => setLeaderboardTab(newValue)}
-            sx={{ mb: 2 }}
-          >
-            <Tab 
-              icon={<Sports />} 
-              label="This Tournament" 
-              iconPosition="start"
-            />
-            <Tab 
-              icon={<CalendarMonth />} 
-              label="This Month" 
-              iconPosition="start"
-            />
-            <Tab 
-              icon={<Timeline />} 
-              label="All-Time" 
-              iconPosition="start"
-            />
-          </Tabs>
-
           <Divider sx={{ mb: 2 }} />
-
-          {/* Current Tournament Leaderboard */}
-          {leaderboardTab === 0 && (
-            <>
-              {tournamentLeaderboard.length > 0 ? (
-                <TableContainer>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell><strong>Rank</strong></TableCell>
-                        <TableCell><strong>Player</strong></TableCell>
-                        <TableCell align="center"><strong>Skill Level</strong></TableCell>
-                        <TableCell align="center"><strong>Matches</strong></TableCell>
-                        <TableCell align="center"><strong>Wins</strong></TableCell>
-                        <TableCell align="center"><strong>Losses</strong></TableCell>
-                        <TableCell align="center"><strong>Win Rate</strong></TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {tournamentLeaderboard.map((player, index) => (
-                        <TableRow 
-                          key={player.id}
-                          sx={{ 
-                            bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? '#cd7f32' : 'inherit',
-                            '&:hover': { bgcolor: 'action.hover' }
-                          }}
-                        >
-                          <TableCell>
-                            {index === 0 && <span>🥇</span>}
-                            {index === 1 && <span>🥈</span>}
-                            {index === 2 && <span>🥉</span>}
-                            {index > 2 && <span>{index + 1}</span>}
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body1" fontWeight={index < 3 ? 'bold' : 'normal'}>
-                              {player.name}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Chip
-                              label={player.skillLevel}
-                              color={getSkillLevelColor(player.skillLevel) as any}
-                              size="small"
-                            />
-                          </TableCell>
-                          <TableCell align="center">{player.matchesPlayed}</TableCell>
-                          <TableCell align="center">
-                            <Typography color="success.main" fontWeight="medium">
-                              {player.matchesWon}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Typography color="error.main">
-                              {player.matchesLost}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Chip
-                              label={`${player.winRate}%`}
-                              color={player.winRate >= 70 ? 'success' : player.winRate >= 50 ? 'warning' : 'error'}
-                              size="small"
-                              variant="outlined"
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              ) : (
-                <Alert severity="info">No matches completed in this tournament yet.</Alert>
-              )}
-            </>
-          )}
-
-          {/* Monthly Leaderboard */}
-          {leaderboardTab === 1 && (
-            <>
-              {monthlyLeaderboard.length > 0 ? (
-                <TableContainer>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell><strong>Rank</strong></TableCell>
-                        <TableCell><strong>Player</strong></TableCell>
-                        <TableCell align="center"><strong>Skill Level</strong></TableCell>
-                        <TableCell align="center"><strong>Matches</strong></TableCell>
-                        <TableCell align="center"><strong>Wins</strong></TableCell>
-                        <TableCell align="center"><strong>Losses</strong></TableCell>
-                        <TableCell align="center"><strong>Win Rate</strong></TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {monthlyLeaderboard.map((player, index) => (
-                        <TableRow 
-                          key={player.id}
-                          sx={{ 
-                            bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? '#cd7f32' : 'inherit',
-                            '&:hover': { bgcolor: 'action.hover' }
-                          }}
-                        >
-                          <TableCell>
-                            {index === 0 && <span>🥇</span>}
-                            {index === 1 && <span>🥈</span>}
-                            {index === 2 && <span>🥉</span>}
-                            {index > 2 && <span>{index + 1}</span>}
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body1" fontWeight={index < 3 ? 'bold' : 'normal'}>
-                              {player.name}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Chip
-                              label={player.skillLevel}
-                              color={getSkillLevelColor(player.skillLevel) as any}
-                              size="small"
-                            />
-                          </TableCell>
-                          <TableCell align="center">{player.matchesPlayed}</TableCell>
-                          <TableCell align="center">
-                            <Typography color="success.main" fontWeight="medium">
-                              {player.matchesWon}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Typography color="error.main">
-                              {player.matchesLost}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Chip
-                              label={`${player.winRate}%`}
-                              color={player.winRate >= 70 ? 'success' : player.winRate >= 50 ? 'warning' : 'error'}
-                              size="small"
-                              variant="outlined"
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              ) : (
-                <Alert severity="info">No matches played this month yet.</Alert>
-              )}
-            </>
-          )}
-
-          {/* Overall Leaderboard */}
-          {leaderboardTab === 2 && (
-            <>
-              {overallLeaderboard.length > 0 ? (
-                <TableContainer>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell><strong>Rank</strong></TableCell>
-                        <TableCell><strong>Player</strong></TableCell>
-                        <TableCell align="center"><strong>Skill Level</strong></TableCell>
-                        <TableCell align="center"><strong>Matches</strong></TableCell>
-                        <TableCell align="center"><strong>Wins</strong></TableCell>
-                        <TableCell align="center"><strong>Losses</strong></TableCell>
-                        <TableCell align="center"><strong>Win Rate</strong></TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {overallLeaderboard.map((player, index) => (
-                        <TableRow 
-                          key={player.id}
-                          sx={{ 
-                            bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? '#cd7f32' : 'inherit',
-                            '&:hover': { bgcolor: 'action.hover' }
-                          }}
-                        >
-                          <TableCell>
-                            {index === 0 && <span>🥇</span>}
-                            {index === 1 && <span>🥈</span>}
-                            {index === 2 && <span>🥉</span>}
-                            {index > 2 && <span>{index + 1}</span>}
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body1" fontWeight={index < 3 ? 'bold' : 'normal'}>
-                              {player.name}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Chip
-                              label={player.skillLevel}
-                              color={getSkillLevelColor(player.skillLevel) as any}
-                              size="small"
-                            />
-                          </TableCell>
-                          <TableCell align="center">{player.matchesPlayed}</TableCell>
-                          <TableCell align="center">
-                            <Typography color="success.main" fontWeight="medium">
-                              {player.matchesWon}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Typography color="error.main">
-                              {player.matchesLost}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="center">
-                            <Chip
-                              label={`${player.winRate}%`}
-                              color={player.winRate >= 70 ? 'success' : player.winRate >= 50 ? 'warning' : 'error'}
-                              size="small"
-                              variant="outlined"
-                            />
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              ) : (
-                <Alert severity="info">No matches played yet. Start a tournament to build the leaderboard!</Alert>
-              )}
-            </>
+          {calculateTournamentLeaderboard().length > 0 ? (
+            <TableContainer>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell><strong>Rank</strong></TableCell>
+                    <TableCell><strong>Player</strong></TableCell>
+                    <TableCell align="center"><strong>Skill Level</strong></TableCell>
+                    <TableCell align="center"><strong>Matches</strong></TableCell>
+                    <TableCell align="center"><strong>Wins</strong></TableCell>
+                    <TableCell align="center"><strong>Losses</strong></TableCell>
+                    <TableCell align="center"><strong>Win Rate</strong></TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {calculateTournamentLeaderboard().map((player, index) => (
+                    <TableRow 
+                      key={player.id}
+                      sx={{ 
+                        bgcolor: index === 0 ? 'gold' : index === 1 ? 'silver' : index === 2 ? '#cd7f32' : 'inherit',
+                        '&:hover': { bgcolor: 'action.hover' }
+                      }}
+                    >
+                      <TableCell>
+                        {index === 0 && <span>🥇</span>}
+                        {index === 1 && <span>🥈</span>}
+                        {index === 2 && <span>🥉</span>}
+                        {index > 2 && <span>{index + 1}</span>}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body1" fontWeight={index < 3 ? 'bold' : 'normal'}>
+                          {player.name}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={player.skillLevel}
+                          color={getSkillLevelColor(player.skillLevel) as any}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell align="center">{player.matchesPlayed}</TableCell>
+                      <TableCell align="center">
+                        <Typography color="success.main" fontWeight="medium">
+                          {player.matchesWon}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography color="error.main">
+                          {player.matchesLost}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={`${player.winRate}%`}
+                          color={player.winRate >= 70 ? 'success' : player.winRate >= 50 ? 'warning' : 'error'}
+                          size="small"
+                          variant="outlined"
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          ) : (
+            <Alert severity="info">No matches completed in this tournament yet.</Alert>
           )}
         </CardContent>
       </Card>
