@@ -362,19 +362,39 @@ app.post('/api/tournament/score', async (req, res) => {
   }
 });
 
-app.get('/api/tournament/results', (req, res) => {
+app.get('/api/tournament/results', async (req, res) => {
   if (!currentTournament) {
     return res.status(400).json({ error: 'No active tournament' });
   }
 
-  const completedFixtures = currentTournament.fixtures.filter(f => f.status === 'completed');
-  const teamStats = calculateTeamStats(currentTournament.teams, completedFixtures);
+  try {
+    // Get all unique player IDs from the tournament
+    const allPlayerIds = [...currentTournament.teams.team1, ...currentTournament.teams.team2];
+    
+    // Fetch player details from database
+    const { data: players, error } = await supabase
+      .from('players')
+      .select('*')
+      .in('id', allPlayerIds);
+    
+    if (error) {
+      console.error('Error fetching players:', error);
+      return res.status(500).json({ error: 'Failed to fetch player details' });
+    }
 
-  res.json({
-    tournament: currentTournament,
-    teamStats,
-    completedFixtures
-  });
+    const completedFixtures = currentTournament.fixtures.filter(f => f.status === 'completed');
+    const teamStats = calculateTeamStats(currentTournament.teams, completedFixtures);
+
+    res.json({
+      tournament: currentTournament,
+      teamStats,
+      completedFixtures,
+      players
+    });
+  } catch (error) {
+    console.error('Error in tournament results:', error);
+    res.status(500).json({ error: 'Failed to get tournament results' });
+  }
 });
 
 // Leaderboard Routes
@@ -477,7 +497,7 @@ app.get('/api/leaderboard/weekly', async (req, res) => {
 // AI-powered team creation
 async function createBalancedTeams(players, matchesPerPlayer = 6) {
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-pro" });
     
     const prompt = `
     Create balanced teams for a badminton doubles tournament from these players:
