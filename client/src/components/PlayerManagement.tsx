@@ -66,16 +66,6 @@ const PlayerManagement: React.FC = () => {
   const [hasActiveTournament, setHasActiveTournament] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    loadPlayers();
-    loadLeaderboards();
-    // Refresh leaderboards every 30 seconds
-    const interval = setInterval(() => {
-      loadLeaderboards();
-    }, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
   const loadPlayers = async () => {
     try {
       setLoading(true);
@@ -103,7 +93,6 @@ const PlayerManagement: React.FC = () => {
 
     const stats = new Map<string, { wins: number; losses: number; played: number; name: string; skillLevel: string }>();
 
-    // Process completed fixtures
     completedFixtures.forEach((fixture: any) => {
       const winners = fixture.winner === 'team1' ? fixture.team1 : fixture.team2;
       const losers = fixture.winner === 'team1' ? fixture.team2 : fixture.team1;
@@ -143,7 +132,6 @@ const PlayerManagement: React.FC = () => {
       });
     });
 
-    // Convert to leaderboard entries
     const entries: PlayerStats[] = [];
     stats.forEach((stat, playerId) => {
       entries.push({
@@ -157,7 +145,6 @@ const PlayerManagement: React.FC = () => {
       });
     });
 
-    // Sort by win rate, then by wins
     entries.sort((a, b) => {
       if (b.winRate !== a.winRate) return b.winRate - a.winRate;
       return b.matchesWon - a.matchesWon;
@@ -204,6 +191,19 @@ const PlayerManagement: React.FC = () => {
       console.error('Error loading leaderboards:', err);
     }
   }, [calculateLiveTournamentLeaderboard]);
+
+  // Effect to load initial data and set up auto-refresh
+  useEffect(() => {
+    loadPlayers();
+    loadLeaderboards();
+    
+    // Refresh leaderboards every 30 seconds
+    const interval = setInterval(() => {
+      loadLeaderboards();
+    }, 30000);
+    
+    return () => clearInterval(interval);
+  }, [loadLeaderboards]); // Include loadLeaderboards in dependencies
 
   const handleAddPlayer = async () => {
     if (!newPlayer.name.trim()) {
@@ -585,16 +585,14 @@ const PlayerManagement: React.FC = () => {
                     Live tournament statistics - updates automatically every 30 seconds
                   </Alert>
                   {renderLeaderboardTable(liveTournamentLeaderboard, 'Live Tournament')}
-                  {hasActiveTournament && (
-                    <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-                      <Button
-                        variant="outlined"
-                        onClick={() => navigate('/tournament')}
-                      >
-                        Go to Tournament Dashboard
-                      </Button>
-                    </Box>
-                  )}
+                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                    <Button
+                      variant="outlined"
+                      onClick={() => navigate('/tournament')}
+                    >
+                      Go to Tournament Dashboard
+                    </Button>
+                  </Box>
                 </>
               ) : (
                 <Alert severity="info">
