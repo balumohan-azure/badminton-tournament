@@ -518,7 +518,7 @@ app.get('/api/ai/models', async (req, res) => {
     res.json({
       totalModels: modelList.length,
       models: modelList,
-      currentModel: 'gemini-1.5-flash'
+      currentModel: 'gemini-2.5-flash'
     });
   } catch (error) {
     console.error('Error listing AI models:', error);
@@ -532,8 +532,9 @@ app.get('/api/ai/models', async (req, res) => {
 // AI-powered team creation
 async function createBalancedTeams(players, matchesPerPlayer = 6) {
   try {
+    // Using the same model that works in Python SDK
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash",
+      model: "gemini-2.5-flash",
       generationConfig: {
         responseMimeType: "application/json",
       }
