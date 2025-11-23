@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { v4: uuidv4 } = require('uuid');
 const { createClient } = require('@supabase/supabase-js');
@@ -14,7 +13,6 @@ const PORT = process.env.PORT || 10000;
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
 
 // Initialize Gemini AI
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -496,78 +494,43 @@ app.get('/api/leaderboard/weekly', async (req, res) => {
   }
 });
 
-// List available AI models
-app.get('/api/ai/models', async (req, res) => {
-  try {
-    if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ 
-        error: 'GEMINI_API_KEY not configured',
-        models: []
-      });
-    }
-
-    const models = await genAI.listModels();
-    
-    const modelList = models.map(model => ({
-      name: model.name,
-      displayName: model.displayName || 'N/A',
-      description: model.description || 'N/A',
-      supportedGenerationMethods: model.supportedGenerationMethods || []
-    }));
-
-    res.json({
-      totalModels: modelList.length,
-      models: modelList,
-      currentModel: 'gemini-2.5-flash'
-    });
-  } catch (error) {
-    console.error('Error listing AI models:', error);
-    res.status(500).json({ 
-      error: 'Failed to list AI models',
-      message: error.message 
-    });
-  }
-});
-
 // AI-powered team creation
 async function createBalancedTeams(players, matchesPerPlayer = 6) {
   try {
-    // Using the same model that works in Python SDK
-    const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.5-flash",
-      generationConfig: {
-        responseMimeType: "application/json",
-      }
-    });
+    // Use the same model that works in Python (gemini-2.5-flash)
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
     
-    const prompt = `
-    Create balanced teams for a badminton doubles tournament from these players:
-    ${players.map(p => `${p.name} (${p.skillLevel})`).join(', ')}
-    
-    Rules:
-    1. Split into exactly 2 teams
-    2. Balance skill levels across teams
-    3. Each team should have similar total skill distribution
-    4. Consider that each player should get approximately ${matchesPerPlayer} matches
-    5. Create teams that allow for diverse pairings and avoid repetitive matchups
-    6. CRITICAL: Ensure ALL players get fair playing time - the difference in number of matches between any two players MUST be at most 1 match (e.g., if some players get 6 matches, no player should get fewer than 5 or more than 7)
-    7. Optimize team composition to enable balanced match distribution where every player participates in a similar number of matches
-    
-    Return ONLY a JSON object with this exact structure (no markdown, no explanation):
-    {
-      "team1": ["player1_name", "player2_name"],
-      "team2": ["player3_name", "player4_name"]
-    }
-    `;
+    const prompt = `You are a tournament organizer. Create balanced teams for a badminton doubles tournament.
+
+Players: ${players.map(p => `${p.name} (${p.skillLevel})`).join(', ')}
+
+Requirements:
+1. Split into exactly 2 teams
+2. Balance skill levels across teams
+3. Each team should have similar total skill distribution
+4. Consider that each player should get approximately ${matchesPerPlayer} matches
+5. Create teams that allow for diverse pairings and avoid repetitive matchups
+6. CRITICAL: Ensure ALL players get fair playing time - the difference in number of matches between any two players MUST be at most 1 match
+7. Optimize team composition to enable balanced match distribution where every player participates in a similar number of matches
+
+IMPORTANT: You must respond with ONLY a valid JSON object, nothing else. No explanation, no markdown, just the JSON.
+
+Required JSON format:
+{
+  "team1": ["player1_name", "player2_name"],
+  "team2": ["player3_name", "player4_name"]
+}`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
     let text = response.text().trim();
     
-    // Clean up potential markdown or extra text
-    text = text.replace(/```json\n?|\n?```/g, '').trim();
+    console.log('AI Response:', text);
     
-    // Find JSON object if there's extra text
+    // Clean up the response - remove markdown code blocks, explanations, etc.
+    text = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    
+    // Try to extract JSON object if there's extra text
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       text = jsonMatch[0];
@@ -576,9 +539,9 @@ async function createBalancedTeams(players, matchesPerPlayer = 6) {
     // Parse AI response
     const teamData = JSON.parse(text);
     
-    // Validate response structure
+    // Validate structure
     if (!teamData.team1 || !teamData.team2 || !Array.isArray(teamData.team1) || !Array.isArray(teamData.team2)) {
-      throw new Error('Invalid team structure from AI');
+      throw new Error('Invalid team structure from AI response');
     }
     
     // Convert player names back to IDs
@@ -589,19 +552,21 @@ async function createBalancedTeams(players, matchesPerPlayer = 6) {
     const team2Ids = teamData.team2.map(name => 
       players.find(p => p.name === name)?.id
     ).filter(Boolean);
-
-    // Validate that all players are assigned
+    
+    // Validate all players are assigned
     if (team1Ids.length + team2Ids.length !== players.length) {
-      throw new Error('Not all players were assigned to teams');
+      console.warn('Not all players were assigned correctly by AI, using fallback');
+      throw new Error('Incomplete player assignment');
     }
 
+    console.log('AI teams created successfully');
     return {
       team1: team1Ids,
       team2: team2Ids
     };
   } catch (error) {
-    console.error('AI team creation failed, using fallback:', error);
-    // Fallback: balanced assignment by skill level
+    console.error('AI team creation failed, using fallback:', error.message);
+    // Fallback: balanced random assignment
     const shuffled = [...players].sort(() => Math.random() - 0.5);
     const mid = Math.ceil(shuffled.length / 2);
     
