@@ -18,6 +18,7 @@ CREATE TABLE tournaments (
     name TEXT,
     matches_per_player INTEGER DEFAULT 6,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed')),
+    court_schedule JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     completed_at TIMESTAMP WITH TIME ZONE
 );
@@ -35,6 +36,9 @@ CREATE TABLE matches (
     winner_team INTEGER CHECK (winner_team IN (1, 2)),
     status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed')),
     played_at TIMESTAMP WITH TIME ZONE,
+    court_number INTEGER,
+    scheduled_start_time TEXT,
+    scheduled_end_time TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
