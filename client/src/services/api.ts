@@ -36,8 +36,8 @@ export const tournamentService = {
     }
   },
 
-  createTournament: async (playerIds: string[], matchesPerPlayer: number = 6): Promise<Tournament> => {
-    const response = await api.post('/tournament/create', { playerIds, matchesPerPlayer });
+  createTournament: async (playerIds: string[], matchesPerPlayer: number = 6, courtSchedule?: any): Promise<Tournament> => {
+    const response = await api.post('/tournament/create', { playerIds, matchesPerPlayer, courtSchedule });
     return response.data;
   },
 
