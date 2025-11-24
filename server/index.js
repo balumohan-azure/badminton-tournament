@@ -318,13 +318,26 @@ app.post('/api/tournament/regenerate', async (req, res) => {
 
     const { matchesPerPlayer = currentTournament.matchesPerPlayer || 6 } = req.body;
     
-    // Get current players
+    // Get current players from database
     const allPlayerIds = [...currentTournament.teams.team1, ...currentTournament.teams.team2];
-    const selectedPlayers = players.filter(p => allPlayerIds.includes(p.id));
     
-    if (selectedPlayers.length !== allPlayerIds.length) {
+    const { data: playersData, error: playersError } = await supabase
+      .from('players')
+      .select('*')
+      .in('id', allPlayerIds);
+    
+    if (playersError) throw playersError;
+    
+    if (playersData.length !== allPlayerIds.length) {
       return res.status(400).json({ error: 'Some players not found' });
     }
+
+    // Transform to match expected format
+    const selectedPlayers = playersData.map(p => ({
+      id: p.id,
+      name: p.name,
+      skillLevel: p.skill_level
+    }));
 
     // Use AI to create new balanced teams
     const teams = await createBalancedTeams(selectedPlayers, matchesPerPlayer);
