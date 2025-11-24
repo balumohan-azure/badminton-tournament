@@ -45,7 +45,7 @@ app.get('/api/players', async (req, res) => {
       matchesWon: 0 // Will be calculated from player_statistics view
     }));
     
-    res.json(players);
+  res.json(players);
   } catch (error) {
     console.error('Error fetching players:', error);
     res.status(500).json({ error: 'Failed to fetch players' });
@@ -54,22 +54,22 @@ app.get('/api/players', async (req, res) => {
 
 app.post('/api/players', async (req, res) => {
   try {
-    const { name, skillLevel } = req.body;
-    
-    if (!name || !skillLevel) {
-      return res.status(400).json({ error: 'Name and skill level are required' });
-    }
+  const { name, skillLevel } = req.body;
+  
+  if (!name || !skillLevel) {
+    return res.status(400).json({ error: 'Name and skill level are required' });
+  }
 
-    const validSkillLevels = ['beginner', 'intermediate', 'advanced'];
-    if (!validSkillLevels.includes(skillLevel.toLowerCase())) {
-      return res.status(400).json({ error: 'Invalid skill level. Must be beginner, intermediate, or advanced' });
-    }
+  const validSkillLevels = ['beginner', 'intermediate', 'advanced'];
+  if (!validSkillLevels.includes(skillLevel.toLowerCase())) {
+    return res.status(400).json({ error: 'Invalid skill level. Must be beginner, intermediate, or advanced' });
+  }
 
     const { data, error } = await supabase
       .from('players')
       .insert([
         {
-          name,
+    name,
           skill_level: skillLevel.toLowerCase()
         }
       ])
@@ -84,15 +84,15 @@ app.post('/api/players', async (req, res) => {
     }
 
     // Transform to match frontend expectations
-    const player = {
+  const player = {
       id: data.id,
       name: data.name,
       skillLevel: data.skill_level,
-      matchesPlayed: 0,
-      matchesWon: 0
-    };
+    matchesPlayed: 0,
+    matchesWon: 0
+  };
 
-    res.status(201).json(player);
+  res.status(201).json(player);
   } catch (error) {
     console.error('Error creating player:', error);
     res.status(500).json({ error: 'Failed to create player' });
@@ -101,7 +101,7 @@ app.post('/api/players', async (req, res) => {
 
 app.delete('/api/players/:id', async (req, res) => {
   try {
-    const playerId = req.params.id;
+  const playerId = req.params.id;
     
     const { error } = await supabase
       .from('players')
@@ -110,7 +110,7 @@ app.delete('/api/players/:id', async (req, res) => {
     
     if (error) throw error;
     
-    res.json({ message: 'Player deleted successfully' });
+  res.json({ message: 'Player deleted successfully' });
   } catch (error) {
     console.error('Error deleting player:', error);
     res.status(500).json({ error: 'Failed to delete player' });
@@ -118,13 +118,95 @@ app.delete('/api/players/:id', async (req, res) => {
 });
 
 // Tournament Management Routes
-app.get('/api/tournament/current', (req, res) => {
+app.get('/api/tournament/current', async (req, res) => {
+  try {
+    // If we have in-memory cache, return it
+    if (currentTournament) {
+      return res.json(currentTournament);
+    }
+
+    // Otherwise, try to load active tournament from database
+    const { data: tournaments, error: tournamentsError } = await supabase
+      .from('tournaments')
+      .select('*')
+      .eq('status', 'active')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (tournamentsError) throw tournamentsError;
+
+    if (!tournaments || tournaments.length === 0) {
+      return res.json(null);
+    }
+
+    const tournament = tournaments[0];
+
+    // Load matches for this tournament
+    const { data: matches, error: matchesError } = await supabase
+      .from('matches')
+      .select('*')
+      .eq('tournament_id', tournament.id)
+      .order('created_at', { ascending: true });
+
+    if (matchesError) throw matchesError;
+
+    if (!matches || matches.length === 0) {
+      return res.json(null);
+    }
+
+    // Extract unique player IDs and reconstruct teams
+    const team1Players = new Set();
+    const team2Players = new Set();
+    
+    matches.forEach(match => {
+      // Determine team assignment based on majority
+      // This is a simplified approach - assumes consistent team assignment
+      team1Players.add(match.team1_player1_id);
+      team1Players.add(match.team1_player2_id);
+      team2Players.add(match.team2_player1_id);
+      team2Players.add(match.team2_player2_id);
+    });
+
+    // Convert matches to fixtures format
+    const fixtures = matches.map(m => ({
+      id: m.id,
+      team1: [m.team1_player1_id, m.team1_player2_id],
+      team2: [m.team2_player1_id, m.team2_player2_id],
+      status: m.status,
+      team1Score: m.team1_score,
+      team2Score: m.team2_score,
+      winner: m.winner_team === 1 ? 'team1' : m.winner_team === 2 ? 'team2' : undefined,
+      completedAt: m.played_at,
+      schedule: m.court_number ? {
+        courtNumber: m.court_number,
+        startTime: m.scheduled_start_time,
+        endTime: m.scheduled_end_time
+      } : undefined
+    }));
+
+    // Reconstruct tournament object
+    currentTournament = {
+      id: tournament.id,
+      teams: {
+        team1: Array.from(team1Players),
+        team2: Array.from(team2Players)
+      },
+      fixtures,
+      matchesPerPlayer: tournament.matches_per_player,
+      status: tournament.status,
+      createdAt: tournament.created_at
+    };
+
   res.json(currentTournament);
+  } catch (error) {
+    console.error('Error loading tournament:', error);
+    res.status(500).json({ error: 'Failed to load tournament' });
+  }
 });
 
 app.post('/api/tournament/create', async (req, res) => {
   try {
-    const { playerIds, matchesPerPlayer = 6 } = req.body;
+    const { playerIds, matchesPerPlayer = 6, courtSchedule } = req.body;
     
     if (!playerIds || playerIds.length < 4) {
       return res.status(400).json({ error: 'At least 4 players are required for a tournament' });
@@ -153,7 +235,16 @@ app.post('/api/tournament/create', async (req, res) => {
     const teams = await createBalancedTeams(selectedPlayers, matchesPerPlayer);
     
     // Generate fixtures with custom matches per player
-    const fixtures = generateFixtures(teams, matchesPerPlayer);
+    let fixtures = generateFixtures(teams, matchesPerPlayer);
+
+    // Apply court scheduling if provided
+    let scheduledFixtures = fixtures;
+    let unscheduledCount = 0;
+    if (courtSchedule && courtSchedule.timeSlots && courtSchedule.timeSlots.length > 0) {
+      const { scheduled, unscheduled } = scheduleMatches(fixtures, courtSchedule);
+      scheduledFixtures = [...scheduled, ...unscheduled];
+      unscheduledCount = unscheduled.length;
+    }
 
     // Create tournament in database
     const { data: tournament, error: tournamentError } = await supabase
@@ -161,7 +252,8 @@ app.post('/api/tournament/create', async (req, res) => {
       .insert([
         {
           matches_per_player: matchesPerPlayer,
-          status: 'active'
+          status: 'active',
+          court_schedule: courtSchedule || null
         }
       ])
       .select()
@@ -169,8 +261,8 @@ app.post('/api/tournament/create', async (req, res) => {
 
     if (tournamentError) throw tournamentError;
 
-    // Store matches in database
-    const matchesData = fixtures.map(fixture => ({
+    // Store matches in database with schedule info
+    const matchesData = scheduledFixtures.map(fixture => ({
       id: fixture.id,
       tournament_id: tournament.id,
       team1_player1_id: fixture.team1[0],
@@ -180,7 +272,10 @@ app.post('/api/tournament/create', async (req, res) => {
       team1_score: null,
       team2_score: null,
       winner_team: null,
-      status: 'pending'
+      status: 'pending',
+      court_number: fixture.schedule?.courtNumber || null,
+      scheduled_start_time: fixture.schedule?.startTime || null,
+      scheduled_end_time: fixture.schedule?.endTime || null
     }));
 
     const { error: matchesError } = await supabase
@@ -193,16 +288,20 @@ app.post('/api/tournament/create', async (req, res) => {
     currentTournament = {
       id: tournament.id,
       teams,
-      fixtures,
+      fixtures: scheduledFixtures,
       matchesPerPlayer,
       status: 'active',
       createdAt: tournament.created_at
     };
 
-    console.log(`Tournament created with ${fixtures.length} matches`);
+    console.log(`Tournament created with ${scheduledFixtures.length} matches`);
     console.log(`Team 1: ${teams.team1.length} players`);
     console.log(`Team 2: ${teams.team2.length} players`);
     console.log(`Matches per player: ${matchesPerPlayer}`);
+    if (courtSchedule) {
+      console.log(`Scheduled: ${scheduledFixtures.length - unscheduledCount} matches`);
+      console.log(`Unscheduled: ${unscheduledCount} matches`);
+    }
 
     res.json(currentTournament);
   } catch (error) {
@@ -316,20 +415,20 @@ app.post('/api/tournament/swap-players', async (req, res) => {
 
 app.post('/api/tournament/score', async (req, res) => {
   try {
-    const { fixtureId, team1Score, team2Score } = req.body;
-    
-    if (!currentTournament) {
-      return res.status(400).json({ error: 'No active tournament' });
-    }
+  const { fixtureId, team1Score, team2Score } = req.body;
+  
+  if (!currentTournament) {
+    return res.status(400).json({ error: 'No active tournament' });
+  }
 
-    const fixture = currentTournament.fixtures.find(f => f.id === fixtureId);
-    if (!fixture) {
-      return res.status(404).json({ error: 'Fixture not found' });
-    }
+  const fixture = currentTournament.fixtures.find(f => f.id === fixtureId);
+  if (!fixture) {
+    return res.status(404).json({ error: 'Fixture not found' });
+  }
 
-    if (fixture.status !== 'pending') {
-      return res.status(400).json({ error: 'Fixture already completed' });
-    }
+  if (fixture.status !== 'pending') {
+    return res.status(400).json({ error: 'Fixture already completed' });
+  }
 
     // Determine winner
     const winnerTeam = team1Score > team2Score ? 1 : 2;
@@ -349,11 +448,11 @@ app.post('/api/tournament/score', async (req, res) => {
     if (updateError) throw updateError;
 
     // Update fixture in memory
-    fixture.status = 'completed';
-    fixture.team1Score = team1Score;
-    fixture.team2Score = team2Score;
-    fixture.winner = team1Score > team2Score ? 'team1' : 'team2';
-    fixture.completedAt = new Date().toISOString();
+  fixture.status = 'completed';
+  fixture.team1Score = team1Score;
+  fixture.team2Score = team2Score;
+  fixture.winner = team1Score > team2Score ? 'team1' : 'team2';
+  fixture.completedAt = new Date().toISOString();
 
     res.json(fixture);
   } catch (error) {
@@ -380,14 +479,14 @@ app.get('/api/tournament/results', async (req, res) => {
     if (error) {
       console.error('Error fetching players:', error);
       return res.status(500).json({ error: 'Failed to fetch player details' });
-    }
+  }
 
-    const completedFixtures = currentTournament.fixtures.filter(f => f.status === 'completed');
-    const teamStats = calculateTeamStats(currentTournament.teams, completedFixtures);
+  const completedFixtures = currentTournament.fixtures.filter(f => f.status === 'completed');
+  const teamStats = calculateTeamStats(currentTournament.teams, completedFixtures);
 
-    res.json({
-      tournament: currentTournament,
-      teamStats,
+  res.json({
+    tournament: currentTournament,
+    teamStats,
       completedFixtures,
       players: players || []
     });
@@ -493,6 +592,133 @@ app.get('/api/leaderboard/weekly', async (req, res) => {
     res.status(500).json({ error: 'Failed to fetch weekly leaderboard' });
   }
 });
+
+// Court scheduling algorithm
+function scheduleMatches(fixtures, courtSchedule) {
+  if (!courtSchedule || !courtSchedule.timeSlots || courtSchedule.timeSlots.length === 0) {
+    return { scheduled: [], unscheduled: fixtures };
+  }
+
+  const MATCH_DURATION = 12; // minutes
+  const MIN_REST = 3; // minutes (best effort, not mandatory)
+
+  // Convert time string "HH:MM" to minutes since midnight
+  const timeToMinutes = (timeStr) => {
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  // Convert minutes since midnight to time string "HH:MM"
+  const minutesToTime = (minutes) => {
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  };
+
+  // Build time blocks with court availability
+  const timeBlocks = [];
+  courtSchedule.timeSlots.forEach(slot => {
+    const startMin = timeToMinutes(slot.startTime);
+    const endMin = timeToMinutes(slot.endTime);
+    const numCourts = slot.courts;
+
+    // Create 12-minute blocks for this time slot
+    for (let time = startMin; time + MATCH_DURATION <= endMin; time += MATCH_DURATION) {
+      timeBlocks.push({
+        startTime: time,
+        endTime: time + MATCH_DURATION,
+        courts: Array(numCourts).fill(null) // null = available
+      });
+    }
+  });
+
+  // Track when each player's last match ends
+  const playerLastMatchEnd = {};
+
+  // Try to schedule each fixture
+  const scheduled = [];
+  const unscheduled = [];
+
+  fixtures.forEach(fixture => {
+    const players = [...fixture.team1, ...fixture.team2];
+    let bestBlock = null;
+    let bestCourt = null;
+    let bestRestScore = -1;
+
+    // Find the earliest available slot where all players are available
+    for (let blockIdx = 0; blockIdx < timeBlocks.length; blockIdx++) {
+      const block = timeBlocks[blockIdx];
+      
+      // Find an available court in this block
+      const courtIdx = block.courts.findIndex(court => court === null);
+      if (courtIdx === -1) continue; // No courts available
+
+      // Check if all players can play (considering rest time)
+      const blockStart = block.startTime;
+      let restScore = 0;
+      let allPlayersAvailable = true;
+
+      for (const playerId of players) {
+        const lastEnd = playerLastMatchEnd[playerId] || 0;
+        const restTime = blockStart - lastEnd;
+        
+        if (restTime < 0) {
+          // Player is still playing
+          allPlayersAvailable = false;
+          break;
+        }
+        
+        // Bonus for having rest time
+        restScore += Math.min(restTime, MIN_REST);
+      }
+
+      if (allPlayersAvailable) {
+        // Prioritize court utilization (earlier slot) over rest
+        if (bestBlock === null) {
+          bestBlock = blockIdx;
+          bestCourt = courtIdx;
+          bestRestScore = restScore;
+        }
+        break; // Take the first available slot (greedy approach)
+      }
+    }
+
+    if (bestBlock !== null) {
+      // Schedule the match
+      const block = timeBlocks[bestBlock];
+      const courtNumber = bestCourt + 1; // 1-indexed for display
+      const startTime = minutesToTime(block.startTime);
+      const endTime = minutesToTime(block.endTime);
+
+      scheduled.push({
+        ...fixture,
+        schedule: {
+          courtNumber,
+          startTime,
+          endTime
+        }
+      });
+
+      // Mark court as occupied
+      block.courts[bestCourt] = fixture.id;
+
+      // Update player availability
+      players.forEach(playerId => {
+        playerLastMatchEnd[playerId] = block.endTime;
+      });
+    } else {
+      // Could not schedule this match
+      unscheduled.push(fixture);
+    }
+  });
+
+  console.log(`Scheduled ${scheduled.length} of ${fixtures.length} matches`);
+  if (unscheduled.length > 0) {
+    console.log(`Warning: ${unscheduled.length} matches could not be scheduled`);
+  }
+
+  return { scheduled, unscheduled };
+}
 
 // AI-powered team creation
 async function createBalancedTeams(players, matchesPerPlayer = 6) {
@@ -619,33 +845,33 @@ function generateFixtures(teams, matchesPerPlayer = 6) {
     for (let i = 0; i < shuffledFixtures.length; i++) {
       const fixture = shuffledFixtures[i];
       
-      // Check if any player in this fixture would exceed the maximum
-      const wouldExceedMax = [...fixture.team1Pair, ...fixture.team2Pair].some(playerId => 
-        playerMatchCount.get(playerId) >= maxMatchesPerPlayer
-      );
-      
-      // Check if this combination has been used
-      const alreadyUsed = usedCombinations.has(fixture.combinationKey);
-      
-      // Only add if it doesn't exceed max and hasn't been used
+    // Check if any player in this fixture would exceed the maximum
+    const wouldExceedMax = [...fixture.team1Pair, ...fixture.team2Pair].some(playerId => 
+      playerMatchCount.get(playerId) >= maxMatchesPerPlayer
+    );
+    
+    // Check if this combination has been used
+    const alreadyUsed = usedCombinations.has(fixture.combinationKey);
+    
+    // Only add if it doesn't exceed max and hasn't been used
       if (!wouldExceedMax && !alreadyUsed) {
-        fixtures.push({
-          id: uuidv4(),
-          team1: fixture.team1Pair,
-          team2: fixture.team2Pair,
-          status: 'pending',
-          team1Score: null,
-          team2Score: null,
-          winner: null
-        });
-        
-        // Update player match counts
-        [...fixture.team1Pair, ...fixture.team2Pair].forEach(playerId => {
-          playerMatchCount.set(playerId, playerMatchCount.get(playerId) + 1);
-        });
-        
-        usedCombinations.add(fixture.combinationKey);
-        totalMatches++;
+      fixtures.push({
+        id: uuidv4(),
+        team1: fixture.team1Pair,
+        team2: fixture.team2Pair,
+        status: 'pending',
+        team1Score: null,
+        team2Score: null,
+        winner: null
+      });
+      
+      // Update player match counts
+      [...fixture.team1Pair, ...fixture.team2Pair].forEach(playerId => {
+        playerMatchCount.set(playerId, playerMatchCount.get(playerId) + 1);
+      });
+      
+      usedCombinations.add(fixture.combinationKey);
+      totalMatches++;
         
         // Remove this fixture from the list
         shuffledFixtures.splice(i, 1);
