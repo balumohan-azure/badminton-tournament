@@ -85,15 +85,7 @@ const TournamentDashboard: React.FC = () => {
 
   const handleScoreClick = (fixture: Fixture) => {
     setScoreDialog({ open: true, fixture });
-    // Pre-fill scores if editing a completed match
-    if (fixture.status === 'completed' && fixture.team1Score !== undefined && fixture.team2Score !== undefined) {
-      setScores({ 
-        team1: fixture.team1Score.toString(), 
-        team2: fixture.team2Score.toString() 
-      });
-    } else {
-      setScores({ team1: '', team2: '' });
-    }
+    setScores({ team1: '', team2: '' });
   };
 
   const handleScoreSubmit = async () => {
@@ -433,17 +425,71 @@ const TournamentDashboard: React.FC = () => {
             <Typography variant="h6" gutterBottom>
               Matches ({tournament.fixtures.filter(f => f.status === 'completed').length}/{tournament.fixtures.length} completed)
             </Typography>
+            
+            {(() => {
+              const scheduledMatches = tournament.fixtures.filter(f => f.schedule);
+              const uniqueCourts = new Set(scheduledMatches.map(f => f.schedule?.courtNumber));
+              
+              if (scheduledMatches.length > 0) {
+                return (
+                  <Alert 
+                    severity={scheduledMatches.length < tournament.fixtures.length ? "warning" : "info"}
+                    sx={{ mb: 2 }}
+                  >
+                    {scheduledMatches.length} of {tournament.fixtures.length} matches scheduled across {uniqueCourts.size} court{uniqueCourts.size !== 1 ? 's' : ''}
+                    {scheduledMatches.length < tournament.fixtures.length && 
+                      ` • ${tournament.fixtures.length - scheduledMatches.length} match${tournament.fixtures.length - scheduledMatches.length !== 1 ? 'es' : ''} unscheduled`
+                    }
+                  </Alert>
+                );
+              }
+              return null;
+            })()}
+            
             <Divider sx={{ mb: 2 }} />
             <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
-              {tournament.fixtures.map((fixture) => (
+              {tournament.fixtures
+                .slice()
+                .sort((a, b) => {
+                  // Sort by: scheduled first (by time), then unscheduled
+                  if (a.schedule && b.schedule) {
+                    return a.schedule.startTime.localeCompare(b.schedule.startTime);
+                  }
+                  if (a.schedule && !b.schedule) return -1;
+                  if (!a.schedule && b.schedule) return 1;
+                  return 0;
+                })
+                .map((fixture) => (
                 <Box key={fixture.id} sx={{ flex: '1 1 300px', minWidth: 300 }}>
                   <Card 
                     variant="outlined"
-                    sx={{ p: 2 }}
+                    sx={{ 
+                      p: 2,
+                      cursor: fixture.status === 'pending' ? 'pointer' : 'default',
+                      '&:hover': fixture.status === 'pending' ? { bgcolor: 'action.hover' } : {}
+                    }}
+                    onClick={() => fixture.status === 'pending' && handleScoreClick(fixture)}
                   >
-                    <Typography variant="subtitle2" gutterBottom>
-                      Match {tournament.fixtures.indexOf(fixture) + 1}
-                    </Typography>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="subtitle2">
+                        Match {tournament.fixtures.indexOf(fixture) + 1}
+                      </Typography>
+                      {fixture.schedule ? (
+                        <Chip
+                          label={`Court ${fixture.schedule.courtNumber} • ${fixture.schedule.startTime}`}
+                          size="small"
+                          color="info"
+                          variant="outlined"
+                        />
+                      ) : (
+                        <Chip
+                          label="Unscheduled"
+                          size="small"
+                          color="default"
+                          variant="outlined"
+                        />
+                      )}
+                    </Box>
                     
                     <Box sx={{ mb: 1 }}>
                       <Typography variant="body2" color="text.secondary">
@@ -458,33 +504,22 @@ const TournamentDashboard: React.FC = () => {
                     </Box>
 
                     {fixture.status === 'completed' ? (
-                      <>
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                          <Typography variant="h6">
-                            {fixture.team1Score} - {fixture.team2Score}
-                          </Typography>
-                          <Chip
-                            label={fixture.winner === 'team1' ? 'Team 1 Wins' : 'Team 2 Wins'}
-                            color={fixture.winner === 'team1' ? 'primary' : 'secondary'}
-                            size="small"
-                          />
-                        </Box>
-                        <Button
-                          variant="outlined"
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <Typography variant="h6">
+                          {fixture.team1Score} - {fixture.team2Score}
+                        </Typography>
+                        <Chip
+                          label={fixture.winner === 'team1' ? 'Team 1 Wins' : 'Team 2 Wins'}
+                          color={fixture.winner === 'team1' ? 'primary' : 'secondary'}
                           size="small"
-                          startIcon={<Score />}
-                          onClick={() => handleScoreClick(fixture)}
-                          fullWidth
-                        >
-                          Edit Score
-                        </Button>
-                      </>
+                        />
+                      </Box>
                     ) : (
                       <Button
                         variant="outlined"
                         startIcon={<Score />}
-                        onClick={() => handleScoreClick(fixture)}
                         fullWidth
+                        size="small"
                       >
                         Enter Score
                       </Button>
@@ -499,9 +534,7 @@ const TournamentDashboard: React.FC = () => {
 
       {/* Score Entry Dialog */}
       <Dialog open={scoreDialog.open} onClose={() => setScoreDialog({ open: false, fixture: null })}>
-        <DialogTitle>
-          {scoreDialog.fixture?.status === 'completed' ? 'Edit Match Score' : 'Enter Match Score'}
-        </DialogTitle>
+        <DialogTitle>Enter Match Score</DialogTitle>
         <DialogContent>
           {scoreDialog.fixture && (
             <Box>
