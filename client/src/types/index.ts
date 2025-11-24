@@ -6,6 +6,23 @@ export interface Player {
   matchesWon: number;
 }
 
+export interface TimeSlot {
+  id: string;
+  startTime: string;  // "06:00"
+  endTime: string;    // "07:00"
+  courts: number;     // Number of courts available
+}
+
+export interface CourtSchedule {
+  timeSlots: TimeSlot[];
+}
+
+export interface ScheduledMatch {
+  courtNumber: number;
+  startTime: string;  // "06:15"
+  endTime: string;    // "06:27"
+}
+
 export interface Fixture {
   id: string;
   team1: string[];
@@ -15,6 +32,7 @@ export interface Fixture {
   team2Score?: number;
   winner?: 'team1' | 'team2';
   completedAt?: string;
+  schedule?: ScheduledMatch;  // Optional - only if scheduled
 }
 
 export interface Tournament {
