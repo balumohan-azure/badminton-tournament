@@ -606,6 +606,36 @@ app.get('/api/leaderboard/weekly', async (req, res) => {
   }
 });
 
+// Helper function to reorder fixtures for better parallel scheduling
+function reorderForParallelScheduling(fixtures) {
+  const result = [];
+  const remaining = [...fixtures];
+  
+  while (remaining.length > 0) {
+    const batch = [];
+    const usedPlayers = new Set();
+    
+    // Build a batch of non-conflicting matches
+    for (let i = remaining.length - 1; i >= 0; i--) {
+      const fixture = remaining[i];
+      const players = [...fixture.team1, ...fixture.team2];
+      
+      // Check if any player in this match is already in the batch
+      const hasConflict = players.some(p => usedPlayers.has(p));
+      
+      if (!hasConflict) {
+        batch.push(fixture);
+        players.forEach(p => usedPlayers.add(p));
+        remaining.splice(i, 1);
+      }
+    }
+    
+    result.push(...batch);
+  }
+  
+  return result;
+}
+
 // Court scheduling algorithm
 function scheduleMatches(fixtures, courtSchedule) {
   if (!courtSchedule || !courtSchedule.timeSlots || courtSchedule.timeSlots.length === 0) {
@@ -652,7 +682,11 @@ function scheduleMatches(fixtures, courtSchedule) {
   const scheduled = [];
   const unscheduled = [];
 
-  fixtures.forEach(fixture => {
+  // Reorder fixtures to group non-conflicting matches together
+  // This maximizes parallel court utilization
+  const reorderedFixtures = reorderForParallelScheduling(fixtures);
+
+  reorderedFixtures.forEach(fixture => {
     const players = [...fixture.team1, ...fixture.team2];
     let bestBlock = null;
     let bestCourt = null;
