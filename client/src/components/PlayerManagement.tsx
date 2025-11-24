@@ -222,7 +222,8 @@ const PlayerManagement: React.FC = () => {
         clearInterval(intervalRef.current);
       }
     };
-  }, [players.length]); // Only re-run if number of players changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players.length]); // Only re-run if number of players changes to prevent flickering
 
   const handleAddPlayer = async () => {
     if (!newPlayer.name.trim()) {
