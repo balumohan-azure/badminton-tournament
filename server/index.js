@@ -938,4 +938,3 @@ app.get('/api/test-fixtures', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
