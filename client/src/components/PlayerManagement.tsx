@@ -34,9 +34,9 @@ import {
   TableRow,
   Paper,
 } from '@mui/material';
-import { Add, Delete, Sports, Leaderboard, Refresh } from '@mui/icons-material';
+import { Add, Delete, Sports, Leaderboard, Refresh, Schedule, AccessTime } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { Player, LeaderboardEntry } from '../types';
+import { Player, LeaderboardEntry, TimeSlot, CourtSchedule } from '../types';
 import { playerService, tournamentService, leaderboardService } from '../services/api';
 
 interface PlayerStats {
@@ -64,6 +64,8 @@ const PlayerManagement: React.FC = () => {
   const [monthlyLeaderboard, setMonthlyLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [overallLeaderboard, setOverallLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [hasActiveTournament, setHasActiveTournament] = useState(false);
+  const [enableCourtSchedule, setEnableCourtSchedule] = useState(false);
+  const [courtSchedule, setCourtSchedule] = useState<TimeSlot[]>([]);
   const navigate = useNavigate();
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -282,7 +284,8 @@ const PlayerManagement: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      await tournamentService.createTournament(selectedPlayers, matchesPerPlayer);
+      const scheduleData = enableCourtSchedule ? { timeSlots: courtSchedule } : undefined;
+      await tournamentService.createTournament(selectedPlayers, matchesPerPlayer, scheduleData);
       setCreateTournamentDialog(false);
       navigate('/tournament');
     } catch (err) {
@@ -290,6 +293,48 @@ const PlayerManagement: React.FC = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const addTimeSlot = () => {
+    const newSlot: TimeSlot = {
+      id: `slot-${Date.now()}`,
+      startTime: '06:00',
+      endTime: '07:00',
+      courts: 1
+    };
+    setCourtSchedule([...courtSchedule, newSlot]);
+  };
+
+  const removeTimeSlot = (id: string) => {
+    setCourtSchedule(courtSchedule.filter(slot => slot.id !== id));
+  };
+
+  const updateTimeSlot = (id: string, field: keyof TimeSlot, value: string | number) => {
+    setCourtSchedule(courtSchedule.map(slot => 
+      slot.id === id ? { ...slot, [field]: value } : slot
+    ));
+  };
+
+  const calculateScheduleCapacity = () => {
+    if (courtSchedule.length === 0 || !enableCourtSchedule) return { totalMinutes: 0, requiredMinutes: 0, utilizationRate: 0 };
+    
+    const totalMinutes = courtSchedule.reduce((sum, slot) => {
+      const start = new Date(`2000-01-01T${slot.startTime}`);
+      const end = new Date(`2000-01-01T${slot.endTime}`);
+      const minutes = (end.getTime() - start.getTime()) / 60000;
+      return sum + (minutes * slot.courts);
+    }, 0);
+
+    // Estimate: need about 4 players minimum, each playing matchesPerPlayer matches
+    // Total matches = (selectedPlayers.length / 2) * matchesPerPlayer (rough estimate)
+    const estimatedMatches = Math.max(selectedPlayers.length, 4) * matchesPerPlayer / 2;
+    const requiredMinutes = estimatedMatches * 12; // 12 minutes per match
+
+    return {
+      totalMinutes,
+      requiredMinutes,
+      utilizationRate: totalMinutes > 0 ? (requiredMinutes / totalMinutes) * 100 : 0
+    };
   };
 
   const getSkillLevelColor = (level: string) => {
@@ -457,6 +502,98 @@ const PlayerManagement: React.FC = () => {
                     Each player will play approximately {matchesPerPlayer} matches
                   </Typography>
                 </Box>
+
+                {/* Court Schedule Section */}
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                    <Checkbox
+                      checked={enableCourtSchedule}
+                      onChange={(e) => setEnableCourtSchedule(e.target.checked)}
+                    />
+                    <Schedule sx={{ mr: 1 }} />
+                    <Typography variant="body2">
+                      Enable Court Scheduling
+                    </Typography>
+                  </Box>
+
+                  {enableCourtSchedule && (
+                    <Box sx={{ pl: 2, border: 1, borderColor: 'divider', borderRadius: 1, p: 2 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ mb: 2, display: 'block' }}>
+                        Define time slots with available courts. Each match takes ~12 minutes.
+                      </Typography>
+
+                      {courtSchedule.map((slot, index) => (
+                        <Box key={slot.id} sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
+                          <TextField
+                            label="Start"
+                            type="time"
+                            value={slot.startTime}
+                            onChange={(e) => updateTimeSlot(slot.id, 'startTime', e.target.value)}
+                            size="small"
+                            sx={{ width: 120 }}
+                          />
+                          <TextField
+                            label="End"
+                            type="time"
+                            value={slot.endTime}
+                            onChange={(e) => updateTimeSlot(slot.id, 'endTime', e.target.value)}
+                            size="small"
+                            sx={{ width: 120 }}
+                          />
+                          <TextField
+                            label="Courts"
+                            type="number"
+                            value={slot.courts}
+                            onChange={(e) => updateTimeSlot(slot.id, 'courts', parseInt(e.target.value) || 1)}
+                            inputProps={{ min: 1, max: 10 }}
+                            size="small"
+                            sx={{ width: 80 }}
+                          />
+                          <IconButton
+                            size="small"
+                            onClick={() => removeTimeSlot(slot.id)}
+                            color="error"
+                          >
+                            <Delete />
+                          </IconButton>
+                        </Box>
+                      ))}
+
+                      <Button
+                        startIcon={<Add />}
+                        onClick={addTimeSlot}
+                        size="small"
+                        sx={{ mt: 1 }}
+                      >
+                        Add Time Slot
+                      </Button>
+
+                      {courtSchedule.length > 0 && (() => {
+                        const capacity = calculateScheduleCapacity();
+                        return (
+                          <Box sx={{ mt: 2 }}>
+                            {capacity.utilizationRate > 100 && (
+                              <Alert severity="error" sx={{ mt: 1 }}>
+                                Warning: Not enough court time for all matches ({Math.round(capacity.requiredMinutes)} min needed, {Math.round(capacity.totalMinutes)} min available)
+                              </Alert>
+                            )}
+                            {capacity.utilizationRate > 80 && capacity.utilizationRate <= 100 && (
+                              <Alert severity="warning" sx={{ mt: 1 }}>
+                                Warning: Court schedule is tight ({Math.round(capacity.utilizationRate)}% utilization)
+                              </Alert>
+                            )}
+                            {capacity.utilizationRate <= 80 && capacity.utilizationRate > 0 && (
+                              <Alert severity="info" sx={{ mt: 1 }}>
+                                Court capacity: {Math.round(capacity.utilizationRate)}% ({Math.round(capacity.requiredMinutes)} of {Math.round(capacity.totalMinutes)} min)
+                              </Alert>
+                            )}
+                          </Box>
+                        );
+                      })()}
+                    </Box>
+                  )}
+                </Box>
+
                 <Button
                   variant="contained"
                   color="secondary"
