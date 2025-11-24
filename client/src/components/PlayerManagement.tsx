@@ -445,7 +445,12 @@ const PlayerManagement: React.FC = () => {
                     type="number"
                     value={matchesPerPlayer}
                     onChange={(e) => setMatchesPerPlayer(parseInt(e.target.value) || 5)}
-                    inputProps={{ min: 2, max: 12 }}
+                    onFocus={(e) => e.target.select()}
+                    inputProps={{ 
+                      min: 1, 
+                      max: 12,
+                      inputMode: 'numeric'
+                    }}
                     sx={{ width: 150 }}
                   />
                   <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }}>
