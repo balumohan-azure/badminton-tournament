@@ -1,21 +1,21 @@
 {
-  "name": "badminton-tournament",
+  "name": "badminton-tournament-server",
   "version": "1.0.0",
-  "description": "AI-powered badminton tournament management system",
-  "homepage": "https://balumohan-azure.github.io/badminton-tournament",
-  "main": "server/index.js",
+  "description": "Backend server for badminton tournament management",
+  "main": "index.js",
   "scripts": {
-    "dev": "concurrently \"npm run server\" \"npm run client\"",
-    "server": "cd server && npm run dev",
-    "client": "cd client && npm start",
-    "build": "cd client && npm run build",
-    "install-all": "npm install && cd server && npm install && cd ../client && npm install"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
   },
-  "keywords": ["badminton", "tournament", "ai", "react", "node"],
-  "author": "Badminton Tournament App",
-  "license": "MIT",
+  "dependencies": {
+    "@google/generative-ai": "^0.2.1",
+    "@supabase/supabase-js": "^2.78.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "uuid": "^9.0.1"
+  },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "nodemon": "^3.0.2"
   }
 }
-

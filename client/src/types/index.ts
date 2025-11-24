@@ -47,5 +47,16 @@ export interface TournamentResults {
   teamStats: TeamStats;
   champion: Player | null;
   completedFixtures: Fixture[];
+  players: Player[];
+}
+
+export interface LeaderboardEntry {
+  id: string;
+  name: string;
+  skillLevel: 'beginner' | 'intermediate' | 'advanced';
+  matchesPlayed: number;
+  matchesWon: number;
+  matchesLost: number;
+  winRate: number;
 }
 

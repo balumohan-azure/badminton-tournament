@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Card,
@@ -24,11 +24,30 @@ import {
   ListItemIcon,
   Divider,
   Checkbox,
+  Tabs,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
 } from '@mui/material';
-import { Add, Delete, Sports } from '@mui/icons-material';
+import { Add, Delete, Sports, Leaderboard, Refresh } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { Player } from '../types';
-import { playerService, tournamentService } from '../services/api';
+import { Player, LeaderboardEntry } from '../types';
+import { playerService, tournamentService, leaderboardService } from '../services/api';
+
+interface PlayerStats {
+  id: string;
+  name: string;
+  skillLevel: string;
+  matchesPlayed: number;
+  matchesWon: number;
+  matchesLost: number;
+  winRate: number;
+}
 
 const PlayerManagement: React.FC = () => {
   const [players, setPlayers] = useState<Player[]>([]);
@@ -37,25 +56,174 @@ const PlayerManagement: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [newPlayer, setNewPlayer] = useState({ name: '', skillLevel: 'beginner' });
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
-  const [matchesPerPlayer, setMatchesPerPlayer] = useState(6);
+  const [matchesPerPlayer, setMatchesPerPlayer] = useState(5);
   const [createTournamentDialog, setCreateTournamentDialog] = useState(false);
+  const [leaderboardTab, setLeaderboardTab] = useState(0);
+  const [liveTournamentLeaderboard, setLiveTournamentLeaderboard] = useState<PlayerStats[]>([]);
+  const [weeklyLeaderboard, setWeeklyLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [monthlyLeaderboard, setMonthlyLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [overallLeaderboard, setOverallLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [hasActiveTournament, setHasActiveTournament] = useState(false);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    loadPlayers();
-  }, []);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadPlayers = async () => {
     try {
       setLoading(true);
       const data = await playerService.getPlayers();
       setPlayers(data);
+      setError(null); // Clear any previous errors
     } catch (err) {
       setError('Failed to load players');
     } finally {
       setLoading(false);
     }
   };
+
+  const getWeekNumber = (date: Date): number => {
+    const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+    const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+    return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+  };
+
+  const calculateLiveTournamentLeaderboard = useCallback((results: any, currentPlayers: Player[]) => {
+    const { completedFixtures, players: tournamentPlayers } = results;
+    if (!completedFixtures || completedFixtures.length === 0) {
+      setLiveTournamentLeaderboard([]);
+      return;
+    }
+
+    const stats = new Map<string, { wins: number; losses: number; played: number; name: string; skillLevel: string }>();
+
+    completedFixtures.forEach((fixture: any) => {
+      const winners = fixture.winner === 'team1' ? fixture.team1 : fixture.team2;
+      const losers = fixture.winner === 'team1' ? fixture.team2 : fixture.team1;
+
+      winners.forEach((playerId: string) => {
+        if (!stats.has(playerId)) {
+          const player = tournamentPlayers?.find((p: Player) => p.id === playerId) || 
+                        currentPlayers.find(p => p.id === playerId);
+          stats.set(playerId, {
+            wins: 0,
+            losses: 0,
+            played: 0,
+            name: player?.name || 'Unknown Player',
+            skillLevel: player?.skillLevel || 'beginner'
+          });
+        }
+        const stat = stats.get(playerId)!;
+        stat.wins++;
+        stat.played++;
+      });
+
+      losers.forEach((playerId: string) => {
+        if (!stats.has(playerId)) {
+          const player = tournamentPlayers?.find((p: Player) => p.id === playerId) || 
+                        currentPlayers.find(p => p.id === playerId);
+          stats.set(playerId, {
+            wins: 0,
+            losses: 0,
+            played: 0,
+            name: player?.name || 'Unknown Player',
+            skillLevel: player?.skillLevel || 'beginner'
+          });
+        }
+        const stat = stats.get(playerId)!;
+        stat.losses++;
+        stat.played++;
+      });
+    });
+
+    const entries: PlayerStats[] = [];
+    stats.forEach((stat, playerId) => {
+      entries.push({
+        id: playerId,
+        name: stat.name,
+        skillLevel: stat.skillLevel,
+        matchesPlayed: stat.played,
+        matchesWon: stat.wins,
+        matchesLost: stat.losses,
+        winRate: stat.played > 0 ? parseFloat(((stat.wins / stat.played) * 100).toFixed(2)) : 0
+      });
+    });
+
+    entries.sort((a, b) => {
+      if (b.winRate !== a.winRate) return b.winRate - a.winRate;
+      return b.matchesWon - a.matchesWon;
+    });
+
+    setLiveTournamentLeaderboard(entries);
+  }, []);
+
+  const loadLeaderboards = useCallback(async (currentPlayers: Player[]) => {
+    try {
+      // Load live tournament leaderboard
+      try {
+        const tournamentResults = await tournamentService.getTournamentResults();
+        if (tournamentResults && tournamentResults.completedFixtures.length > 0) {
+          setHasActiveTournament(true);
+          calculateLiveTournamentLeaderboard(tournamentResults, currentPlayers);
+        } else {
+          setHasActiveTournament(false);
+          setLiveTournamentLeaderboard([]);
+        }
+      } catch (err) {
+        setHasActiveTournament(false);
+        setLiveTournamentLeaderboard([]);
+      }
+
+      // Load historical leaderboards from database
+      const now = new Date();
+      const [overall, monthly, weekly] = await Promise.all([
+        leaderboardService.getOverallLeaderboard(),
+        leaderboardService.getMonthlyLeaderboard(
+          now.getFullYear(),
+          now.getMonth() + 1
+        ),
+        leaderboardService.getWeeklyLeaderboard(
+          now.getFullYear(),
+          getWeekNumber(now)
+        )
+      ]);
+
+      setOverallLeaderboard(overall);
+      setMonthlyLeaderboard(monthly);
+      setWeeklyLeaderboard(weekly);
+    } catch (err) {
+      console.error('Error loading leaderboards:', err);
+    }
+  }, [calculateLiveTournamentLeaderboard]);
+
+  // Initial load
+  useEffect(() => {
+    const initialize = async () => {
+      await loadPlayers();
+    };
+    initialize();
+  }, []);
+
+  // Load leaderboards after players are loaded and set up interval
+  useEffect(() => {
+    if (players.length > 0) {
+      loadLeaderboards(players);
+      
+      // Set up auto-refresh every 30 seconds
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      
+      intervalRef.current = setInterval(() => {
+        loadLeaderboards(players);
+      }, 30000);
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [players.length]); // Only re-run if number of players changes to prevent flickering
 
   const handleAddPlayer = async () => {
     if (!newPlayer.name.trim()) {
@@ -133,6 +301,81 @@ const PlayerManagement: React.FC = () => {
     }
   };
 
+  const renderLeaderboardTable = (data: PlayerStats[] | LeaderboardEntry[], title: string) => {
+    if (data.length === 0) {
+      return <Alert severity="info">No data available for {title}.</Alert>;
+    }
+
+    return (
+      <TableContainer component={Paper} elevation={0}>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell><strong>Rank</strong></TableCell>
+              <TableCell><strong>Player</strong></TableCell>
+              <TableCell align="center"><strong>Skill</strong></TableCell>
+              <TableCell align="center"><strong>Matches</strong></TableCell>
+              <TableCell align="center"><strong>Wins</strong></TableCell>
+              <TableCell align="center"><strong>Losses</strong></TableCell>
+              <TableCell align="center"><strong>Win Rate</strong></TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {data.map((entry, index) => (
+              <TableRow 
+                key={entry.id}
+                sx={{ 
+                  bgcolor: index === 0 ? 'rgba(255, 215, 0, 0.2)' : 
+                          index === 1 ? 'rgba(192, 192, 192, 0.2)' : 
+                          index === 2 ? 'rgba(205, 127, 50, 0.2)' : 'inherit',
+                  '&:hover': { bgcolor: 'action.hover' }
+                }}
+              >
+                <TableCell>
+                  {index === 0 && <span>🥇</span>}
+                  {index === 1 && <span>🥈</span>}
+                  {index === 2 && <span>🥉</span>}
+                  {index > 2 && <span>{index + 1}</span>}
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2" fontWeight={index < 3 ? 'bold' : 'normal'}>
+                    {entry.name}
+                  </Typography>
+                </TableCell>
+                <TableCell align="center">
+                  <Chip
+                    label={entry.skillLevel}
+                    color={getSkillLevelColor(entry.skillLevel) as any}
+                    size="small"
+                  />
+                </TableCell>
+                <TableCell align="center">{entry.matchesPlayed}</TableCell>
+                <TableCell align="center">
+                  <Typography color="success.main" fontWeight="medium">
+                    {entry.matchesWon}
+                  </Typography>
+                </TableCell>
+                <TableCell align="center">
+                  <Typography color="error.main">
+                    {entry.matchesLost}
+                  </Typography>
+                </TableCell>
+                <TableCell align="center">
+                  <Chip
+                    label={`${entry.winRate}%`}
+                    color={entry.winRate >= 70 ? 'success' : entry.winRate >= 50 ? 'warning' : 'error'}
+                    size="small"
+                    variant="outlined"
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    );
+  };
+
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
@@ -201,8 +444,13 @@ const PlayerManagement: React.FC = () => {
                     label="Matches per Player"
                     type="number"
                     value={matchesPerPlayer}
-                    onChange={(e) => setMatchesPerPlayer(parseInt(e.target.value) || 6)}
-                    inputProps={{ min: 2, max: 12 }}
+                    onChange={(e) => setMatchesPerPlayer(parseInt(e.target.value) || 5)}
+                    onFocus={(e) => e.target.select()}
+                    inputProps={{ 
+                      min: 1, 
+                      max: 12,
+                      inputMode: 'numeric'
+                    }}
                     sx={{ width: 150 }}
                   />
                   <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }}>
@@ -327,6 +575,60 @@ const PlayerManagement: React.FC = () => {
                 ))}
               </List>
             )}
+          </CardContent>
+        </Card>
+
+        {/* Leaderboards Section */}
+        <Card>
+          <CardContent>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+              <Typography variant="h6">
+                <Leaderboard sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Player Leaderboards
+              </Typography>
+              <IconButton onClick={() => loadLeaderboards(players)} size="small" title="Refresh leaderboards">
+                <Refresh />
+              </IconButton>
+            </Box>
+            <Divider sx={{ mb: 2 }} />
+            
+            <Tabs 
+              value={leaderboardTab} 
+              onChange={(e, newValue) => setLeaderboardTab(newValue)}
+              sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+            >
+              <Tab label="Live Tournament" disabled={!hasActiveTournament} />
+              <Tab label="This Week" />
+              <Tab label="This Month" />
+              <Tab label="All-Time" />
+            </Tabs>
+
+            {leaderboardTab === 0 && (
+              hasActiveTournament ? (
+                <>
+                  <Alert severity="info" sx={{ mb: 2 }}>
+                    Live tournament statistics - updates automatically every 30 seconds
+                  </Alert>
+                  {renderLeaderboardTable(liveTournamentLeaderboard, 'Live Tournament')}
+                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                    <Button
+                      variant="outlined"
+                      onClick={() => navigate('/tournament')}
+                    >
+                      Go to Tournament Dashboard
+                    </Button>
+                  </Box>
+                </>
+              ) : (
+                <Alert severity="info">
+                  No active tournament. Create a tournament to see live statistics!
+                </Alert>
+              )
+            )}
+
+            {leaderboardTab === 1 && renderLeaderboardTable(weeklyLeaderboard, 'This Week')}
+            {leaderboardTab === 2 && renderLeaderboardTable(monthlyLeaderboard, 'This Month')}
+            {leaderboardTab === 3 && renderLeaderboardTable(overallLeaderboard, 'All-Time')}
           </CardContent>
         </Card>
       </Box>
