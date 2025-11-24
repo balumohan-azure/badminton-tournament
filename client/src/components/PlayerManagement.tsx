@@ -56,7 +56,7 @@ const PlayerManagement: React.FC = () => {
   const [success, setSuccess] = useState<string | null>(null);
   const [newPlayer, setNewPlayer] = useState({ name: '', skillLevel: 'beginner' });
   const [selectedPlayers, setSelectedPlayers] = useState<string[]>([]);
-  const [matchesPerPlayer, setMatchesPerPlayer] = useState(6);
+  const [matchesPerPlayer, setMatchesPerPlayer] = useState(5);
   const [createTournamentDialog, setCreateTournamentDialog] = useState(false);
   const [leaderboardTab, setLeaderboardTab] = useState(0);
   const [liveTournamentLeaderboard, setLiveTournamentLeaderboard] = useState<PlayerStats[]>([]);
@@ -444,7 +444,7 @@ const PlayerManagement: React.FC = () => {
                     label="Matches per Player"
                     type="number"
                     value={matchesPerPlayer}
-                    onChange={(e) => setMatchesPerPlayer(parseInt(e.target.value) || 6)}
+                    onChange={(e) => setMatchesPerPlayer(parseInt(e.target.value) || 5)}
                     inputProps={{ min: 2, max: 12 }}
                     sx={{ width: 150 }}
                   />
