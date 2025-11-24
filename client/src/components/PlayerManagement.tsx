@@ -34,9 +34,9 @@ import {
   TableRow,
   Paper,
 } from '@mui/material';
-import { Add, Delete, Sports, Leaderboard, Refresh, Schedule, AccessTime } from '@mui/icons-material';
+import { Add, Delete, Sports, Leaderboard, Refresh, Schedule } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-import { Player, LeaderboardEntry, TimeSlot, CourtSchedule } from '../types';
+import { Player, LeaderboardEntry, TimeSlot } from '../types';
 import { playerService, tournamentService, leaderboardService } from '../services/api';
 
 interface PlayerStats {
