@@ -659,40 +659,45 @@ function scheduleMatches(fixtures, courtSchedule) {
     let bestRestScore = -1;
 
     // Find the earliest available slot where all players are available
+    // We prioritize filling all courts in a time block before moving to the next
     for (let blockIdx = 0; blockIdx < timeBlocks.length; blockIdx++) {
       const block = timeBlocks[blockIdx];
-      
-      // Find an available court in this block
-      const courtIdx = block.courts.findIndex(court => court === null);
-      if (courtIdx === -1) continue; // No courts available
-
-      // Check if all players can play (considering rest time)
       const blockStart = block.startTime;
-      let restScore = 0;
-      let allPlayersAvailable = true;
-
-      for (const playerId of players) {
-        const lastEnd = playerLastMatchEnd[playerId] || 0;
-        const restTime = blockStart - lastEnd;
+      
+      // Try each court in this time block
+      for (let courtIdx = 0; courtIdx < block.courts.length; courtIdx++) {
+        if (block.courts[courtIdx] !== null) continue; // Court already occupied
         
-        if (restTime < 0) {
-          // Player is still playing
-          allPlayersAvailable = false;
-          break;
+        // Check if all players can play (considering rest time)
+        let restScore = 0;
+        let allPlayersAvailable = true;
+
+        for (const playerId of players) {
+          const lastEnd = playerLastMatchEnd[playerId] || 0;
+          const restTime = blockStart - lastEnd;
+          
+          if (restTime < 0) {
+            // Player is still playing
+            allPlayersAvailable = false;
+            break;
+          }
+          
+          // Bonus for having rest time
+          restScore += Math.min(restTime, MIN_REST);
         }
-        
-        // Bonus for having rest time
-        restScore += Math.min(restTime, MIN_REST);
-      }
 
-      if (allPlayersAvailable) {
-        // Prioritize court utilization (earlier slot) over rest
-        if (bestBlock === null) {
+        if (allPlayersAvailable) {
+          // Found a suitable slot - take it immediately (greedy approach)
           bestBlock = blockIdx;
           bestCourt = courtIdx;
           bestRestScore = restScore;
+          break;
         }
-        break; // Take the first available slot (greedy approach)
+      }
+      
+      // If we found a slot in this time block, stop searching
+      if (bestBlock !== null) {
+        break;
       }
     }
 
