@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Card,
@@ -65,12 +65,14 @@ const PlayerManagement: React.FC = () => {
   const [overallLeaderboard, setOverallLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [hasActiveTournament, setHasActiveTournament] = useState(false);
   const navigate = useNavigate();
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const loadPlayers = async () => {
     try {
       setLoading(true);
       const data = await playerService.getPlayers();
       setPlayers(data);
+      setError(null); // Clear any previous errors
     } catch (err) {
       setError('Failed to load players');
     } finally {
@@ -84,7 +86,7 @@ const PlayerManagement: React.FC = () => {
     return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
   };
 
-  const calculateLiveTournamentLeaderboard = useCallback((results: any) => {
+  const calculateLiveTournamentLeaderboard = useCallback((results: any, currentPlayers: Player[]) => {
     const { completedFixtures, players: tournamentPlayers } = results;
     if (!completedFixtures || completedFixtures.length === 0) {
       setLiveTournamentLeaderboard([]);
@@ -100,7 +102,7 @@ const PlayerManagement: React.FC = () => {
       winners.forEach((playerId: string) => {
         if (!stats.has(playerId)) {
           const player = tournamentPlayers?.find((p: Player) => p.id === playerId) || 
-                        players.find(p => p.id === playerId);
+                        currentPlayers.find(p => p.id === playerId);
           stats.set(playerId, {
             wins: 0,
             losses: 0,
@@ -117,7 +119,7 @@ const PlayerManagement: React.FC = () => {
       losers.forEach((playerId: string) => {
         if (!stats.has(playerId)) {
           const player = tournamentPlayers?.find((p: Player) => p.id === playerId) || 
-                        players.find(p => p.id === playerId);
+                        currentPlayers.find(p => p.id === playerId);
           stats.set(playerId, {
             wins: 0,
             losses: 0,
@@ -151,16 +153,16 @@ const PlayerManagement: React.FC = () => {
     });
 
     setLiveTournamentLeaderboard(entries);
-  }, [players]);
+  }, []);
 
-  const loadLeaderboards = useCallback(async () => {
+  const loadLeaderboards = useCallback(async (currentPlayers: Player[]) => {
     try {
       // Load live tournament leaderboard
       try {
         const tournamentResults = await tournamentService.getTournamentResults();
         if (tournamentResults && tournamentResults.completedFixtures.length > 0) {
           setHasActiveTournament(true);
-          calculateLiveTournamentLeaderboard(tournamentResults);
+          calculateLiveTournamentLeaderboard(tournamentResults, currentPlayers);
         } else {
           setHasActiveTournament(false);
           setLiveTournamentLeaderboard([]);
@@ -192,18 +194,35 @@ const PlayerManagement: React.FC = () => {
     }
   }, [calculateLiveTournamentLeaderboard]);
 
-  // Effect to load initial data and set up auto-refresh
+  // Initial load
   useEffect(() => {
-    loadPlayers();
-    loadLeaderboards();
-    
-    // Refresh leaderboards every 30 seconds
-    const interval = setInterval(() => {
-      loadLeaderboards();
-    }, 30000);
-    
-    return () => clearInterval(interval);
-  }, [loadLeaderboards]); // Include loadLeaderboards in dependencies
+    const initialize = async () => {
+      await loadPlayers();
+    };
+    initialize();
+  }, []);
+
+  // Load leaderboards after players are loaded and set up interval
+  useEffect(() => {
+    if (players.length > 0) {
+      loadLeaderboards(players);
+      
+      // Set up auto-refresh every 30 seconds
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+      
+      intervalRef.current = setInterval(() => {
+        loadLeaderboards(players);
+      }, 30000);
+    }
+
+    return () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+      }
+    };
+  }, [players.length]); // Only re-run if number of players changes
 
   const handleAddPlayer = async () => {
     if (!newPlayer.name.trim()) {
@@ -561,7 +580,7 @@ const PlayerManagement: React.FC = () => {
                 <Leaderboard sx={{ mr: 1, verticalAlign: 'middle' }} />
                 Player Leaderboards
               </Typography>
-              <IconButton onClick={loadLeaderboards} size="small" title="Refresh leaderboards">
+              <IconButton onClick={() => loadLeaderboards(players)} size="small" title="Refresh leaderboards">
                 <Refresh />
               </IconButton>
             </Box>
