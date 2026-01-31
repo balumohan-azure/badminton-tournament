@@ -64,6 +64,8 @@ const PlayerManagement: React.FC = () => {
   const [monthlyLeaderboard, setMonthlyLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [overallLeaderboard, setOverallLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [hasActiveTournament, setHasActiveTournament] = useState(false);
+  const [activeTournament, setActiveTournament] = useState<any>(null);
+  const [deleteActiveTournamentDialog, setDeleteActiveTournamentDialog] = useState(false);
   const [enableCourtSchedule, setEnableCourtSchedule] = useState(false);
   const [courtSchedule, setCourtSchedule] = useState<TimeSlot[]>([]);
   const navigate = useNavigate();
@@ -164,13 +166,16 @@ const PlayerManagement: React.FC = () => {
         const tournamentResults = await tournamentService.getTournamentResults();
         if (tournamentResults && tournamentResults.completedFixtures.length > 0) {
           setHasActiveTournament(true);
+          setActiveTournament(tournamentResults.tournament);
           calculateLiveTournamentLeaderboard(tournamentResults, currentPlayers);
         } else {
           setHasActiveTournament(false);
+          setActiveTournament(null);
           setLiveTournamentLeaderboard([]);
         }
       } catch (err) {
         setHasActiveTournament(false);
+        setActiveTournament(null);
         setLiveTournamentLeaderboard([]);
       }
 
@@ -277,6 +282,10 @@ const PlayerManagement: React.FC = () => {
       setError('At least 4 players are required for a tournament');
       return;
     }
+    if (activeTournament && activeTournament.isSaved) {
+      setError('An active tournament already exists. Please delete it first or complete it.');
+      return;
+    }
     setCreateTournamentDialog(true);
   };
 
@@ -285,11 +294,37 @@ const PlayerManagement: React.FC = () => {
       setLoading(true);
       setError(null);
       const scheduleData = enableCourtSchedule ? { timeSlots: courtSchedule } : undefined;
-      await tournamentService.createTournament(selectedPlayers, matchesPerPlayer, scheduleData);
+      await tournamentService.createTournament(
+        selectedPlayers, 
+        matchesPerPlayer, 
+        scheduleData,
+        true  // Preview mode
+      );
       setCreateTournamentDialog(false);
       navigate('/tournament');
     } catch (err) {
       setError('Failed to create tournament');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteActiveTournament = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await tournamentService.deleteTournament();
+      setDeleteActiveTournamentDialog(false);
+      setActiveTournament(null);
+      setHasActiveTournament(false);
+      setSuccess('Active tournament deleted successfully!');
+      setTimeout(() => setSuccess(null), 3000);
+      // Reload leaderboards
+      if (players.length > 0) {
+        loadLeaderboards(players);
+      }
+    } catch (err) {
+      setError('Failed to delete active tournament');
     } finally {
       setLoading(false);
     }
@@ -430,6 +465,34 @@ const PlayerManagement: React.FC = () => {
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
       {success && <Alert severity="success" sx={{ mb: 2 }}>{success}</Alert>}
+
+      {/* Active Tournament Warning Banner */}
+      {activeTournament && activeTournament.isSaved && (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom>⚠️ Active Tournament in Progress</Typography>
+          <Typography variant="body2" sx={{ mb: 2 }}>
+            There is currently an active tournament saved in the database. 
+            You must delete it before creating a new tournament.
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 2 }}>
+            <Button 
+              size="small" 
+              variant="contained"
+              onClick={() => navigate('/tournament')}
+            >
+              Go to Tournament Dashboard
+            </Button>
+            <Button 
+              size="small" 
+              variant="outlined" 
+              color="error"
+              onClick={() => setDeleteActiveTournamentDialog(true)}
+            >
+              Delete Active Tournament
+            </Button>
+          </Box>
+        </Alert>
+      )}
 
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {/* Top Row - Forms */}
@@ -779,11 +842,33 @@ const PlayerManagement: React.FC = () => {
             Each player will play approximately {matchesPerPlayer} matches.
             The AI will automatically create balanced teams and generate fixtures.
           </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
+            Note: This will create a preview tournament. You'll need to save it from the tournament dashboard.
+          </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCreateTournamentDialog(false)}>Cancel</Button>
           <Button onClick={confirmCreateTournament} variant="contained" disabled={loading}>
             Create Tournament
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Active Tournament Dialog */}
+      <Dialog open={deleteActiveTournamentDialog} onClose={() => setDeleteActiveTournamentDialog(false)}>
+        <DialogTitle>Delete Active Tournament</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 2 }}>
+            Are you sure you want to delete the active tournament?
+          </Typography>
+          <Typography variant="body2" color="error">
+            This will delete all tournament data, including recorded scores and match history. This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteActiveTournamentDialog(false)}>Cancel</Button>
+          <Button onClick={handleDeleteActiveTournament} variant="contained" color="error" disabled={loading}>
+            Delete Tournament
           </Button>
         </DialogActions>
       </Dialog>
