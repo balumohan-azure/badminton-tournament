@@ -41,6 +41,7 @@ const TournamentDashboard: React.FC = () => {
   const [regenerateDialog, setRegenerateDialog] = useState(false);
   const [matchesPerPlayer, setMatchesPerPlayer] = useState(6);
   const [selectedPlayerForSwap, setSelectedPlayerForSwap] = useState<string | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -120,6 +121,9 @@ const TournamentDashboard: React.FC = () => {
       setLoading(true);
       setError(null);
       const updatedTournament = await tournamentService.regenerateTournament(matchesPerPlayer);
+      // Mark as unsaved after regenerate - user needs to save again
+      updatedTournament.isSaved = false;
+      updatedTournament.status = 'preview';
       setTournament(updatedTournament);
       setRegenerateDialog(false);
     } catch (err) {
@@ -134,6 +138,9 @@ const TournamentDashboard: React.FC = () => {
       setLoading(true);
       setError(null);
       const updatedTournament = await tournamentService.swapPlayers(player1Id, player2Id);
+      // Mark as unsaved after swap - user needs to save again
+      updatedTournament.isSaved = false;
+      updatedTournament.status = 'preview';
       setTournament(updatedTournament);
       setSelectedPlayerForSwap(null);
     } catch (err) {
@@ -151,6 +158,35 @@ const TournamentDashboard: React.FC = () => {
     } else {
       // Direct swap without confirmation dialog
       handleSwapPlayers(selectedPlayerForSwap, playerId);
+    }
+  };
+
+  const handleSaveTournament = async () => {
+    if (!tournament) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const savedTournament = await tournamentService.saveTournament(tournament);
+      setTournament(savedTournament);
+    } catch (err) {
+      setError('Failed to save tournament. An active tournament may already exist.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteTournament = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      await tournamentService.deleteTournament();
+      setDeleteDialog(false);
+      navigate('/players');
+    } catch (err) {
+      setError('Failed to delete tournament');
+      setDeleteDialog(false);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -224,6 +260,26 @@ const TournamentDashboard: React.FC = () => {
       </Typography>
 
       {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+
+      {/* Tournament Status Banner */}
+      {!tournament.isSaved ? (
+        <Alert severity="warning" sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom>⚠️ PREVIEW MODE - Tournament Not Saved</Typography>
+          <Typography variant="body2">
+            Teams and fixtures have been generated but are not saved to the database yet. 
+            Review the teams below and click <strong>"Save Tournament"</strong> to commit and start tracking scores.
+            You can regenerate teams or swap players before saving.
+          </Typography>
+        </Alert>
+      ) : (
+        <Alert severity="success" sx={{ mb: 3 }}>
+          <Typography variant="h6" gutterBottom>✅ ACTIVE TOURNAMENT</Typography>
+          <Typography variant="body2">
+            Tournament is saved to the database and scores are being tracked. 
+            You can still swap players or regenerate teams - just remember to click <strong>"Save Tournament"</strong> again to commit changes.
+          </Typography>
+        </Alert>
+      )}
 
       {/* Tournament Progress */}
       <Card sx={{ mb: 3 }}>
@@ -465,10 +521,11 @@ const TournamentDashboard: React.FC = () => {
                     variant="outlined"
                     sx={{ 
                       p: 2,
-                      cursor: fixture.status === 'pending' ? 'pointer' : 'default',
-                      '&:hover': fixture.status === 'pending' ? { bgcolor: 'action.hover' } : {}
+                      cursor: fixture.status === 'pending' && tournament.isSaved ? 'pointer' : 'default',
+                      '&:hover': fixture.status === 'pending' && tournament.isSaved ? { bgcolor: 'action.hover' } : {},
+                      opacity: !tournament.isSaved ? 0.7 : 1
                     }}
-                    onClick={() => fixture.status === 'pending' && handleScoreClick(fixture)}
+                    onClick={() => fixture.status === 'pending' && tournament.isSaved && handleScoreClick(fixture)}
                   >
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                       <Typography variant="subtitle2">
@@ -520,8 +577,9 @@ const TournamentDashboard: React.FC = () => {
                         startIcon={<Score />}
                         fullWidth
                         size="small"
+                        disabled={!tournament.isSaved}
                       >
-                        Enter Score
+                        {tournament.isSaved ? 'Enter Score' : 'Save Tournament First'}
                       </Button>
                     )}
                   </Card>
@@ -605,14 +663,50 @@ const TournamentDashboard: React.FC = () => {
         </DialogActions>
       </Dialog>
 
+      {/* Delete Tournament Dialog */}
+      <Dialog open={deleteDialog} onClose={() => setDeleteDialog(false)}>
+        <DialogTitle>Delete Active Tournament</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 2 }}>
+            Are you sure you want to delete this tournament? 
+            {tournament.fixtures.some(f => f.status === 'completed') && (
+              <strong> This will delete all recorded scores and match history.</strong>
+            )}
+          </Typography>
+          <Typography variant="body2" color="error">
+            This action cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialog(false)}>Cancel</Button>
+          <Button onClick={handleDeleteTournament} variant="contained" color="error" disabled={loading}>
+            Delete Tournament
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* Navigation */}
-      <Box sx={{ mt: 3, display: 'flex', gap: 2 }}>
+      <Box sx={{ mt: 3, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
         <Button
           variant="outlined"
           onClick={() => navigate('/players')}
         >
           Back to Players
         </Button>
+        
+        {!tournament.isSaved && (
+          <Button
+            variant="contained"
+            color="success"
+            size="large"
+            onClick={handleSaveTournament}
+            disabled={loading}
+            sx={{ fontWeight: 'bold' }}
+          >
+            💾 Save Tournament
+          </Button>
+        )}
+        
         <Button
           variant="outlined"
           color="secondary"
@@ -622,6 +716,7 @@ const TournamentDashboard: React.FC = () => {
         >
           Regenerate Teams & Fixtures
         </Button>
+        
         {selectedPlayerForSwap && (
           <Button
             variant="outlined"
@@ -632,14 +727,27 @@ const TournamentDashboard: React.FC = () => {
             Clear Swap Selection
           </Button>
         )}
-        <Button
-          variant="contained"
-          startIcon={<EmojiEvents />}
-          onClick={() => navigate('/results')}
-          disabled={activeStep < 2}
-        >
-          View Results
-        </Button>
+        
+        {tournament.isSaved && (
+          <>
+            <Button
+              variant="outlined"
+              color="error"
+              onClick={() => setDeleteDialog(true)}
+              disabled={loading}
+            >
+              Delete Tournament
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={<EmojiEvents />}
+              onClick={() => navigate('/results')}
+              disabled={activeStep < 2}
+            >
+              View Results
+            </Button>
+          </>
+        )}
       </Box>
     </Box>
   );
