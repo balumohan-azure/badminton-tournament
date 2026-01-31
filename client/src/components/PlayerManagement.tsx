@@ -164,10 +164,22 @@ const PlayerManagement: React.FC = () => {
       // Load live tournament leaderboard
       try {
         const tournamentResults = await tournamentService.getTournamentResults();
-        if (tournamentResults && tournamentResults.completedFixtures.length > 0) {
-          setHasActiveTournament(true);
-          setActiveTournament(tournamentResults.tournament);
-          calculateLiveTournamentLeaderboard(tournamentResults, currentPlayers);
+        if (tournamentResults && tournamentResults.tournament) {
+          // Check if tournament is saved (active in database)
+          if (tournamentResults.tournament.isSaved) {
+            setHasActiveTournament(true);
+            setActiveTournament(tournamentResults.tournament);
+          } else {
+            setHasActiveTournament(false);
+            setActiveTournament(null);
+          }
+          
+          // Only show leaderboard if there are completed fixtures
+          if (tournamentResults.completedFixtures.length > 0) {
+            calculateLiveTournamentLeaderboard(tournamentResults, currentPlayers);
+          } else {
+            setLiveTournamentLeaderboard([]);
+          }
         } else {
           setHasActiveTournament(false);
           setActiveTournament(null);
@@ -806,18 +818,37 @@ const PlayerManagement: React.FC = () => {
             {leaderboardTab === 0 && (
               hasActiveTournament ? (
                 <>
-                  <Alert severity="info" sx={{ mb: 2 }}>
-                    Live tournament statistics - updates automatically every 30 seconds
-                  </Alert>
-                  {renderLeaderboardTable(liveTournamentLeaderboard, 'Live Tournament')}
-                  <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
-                    <Button
-                      variant="outlined"
-                      onClick={() => navigate('/tournament')}
-                    >
-                      Go to Tournament Dashboard
-                    </Button>
-                  </Box>
+                  {liveTournamentLeaderboard.length > 0 ? (
+                    <>
+                      <Alert severity="info" sx={{ mb: 2 }}>
+                        Live tournament statistics - updates automatically every 30 seconds
+                      </Alert>
+                      {renderLeaderboardTable(liveTournamentLeaderboard, 'Live Tournament')}
+                      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                        <Button
+                          variant="outlined"
+                          onClick={() => navigate('/tournament')}
+                        >
+                          Go to Tournament Dashboard
+                        </Button>
+                      </Box>
+                    </>
+                  ) : (
+                    <>
+                      <Alert severity="info" sx={{ mb: 2 }}>
+                        Active tournament found, but no matches have been completed yet. 
+                        Go to the tournament dashboard to enter scores!
+                      </Alert>
+                      <Box sx={{ mt: 2, display: 'flex', justifyContent: 'center' }}>
+                        <Button
+                          variant="contained"
+                          onClick={() => navigate('/tournament')}
+                        >
+                          Go to Tournament Dashboard
+                        </Button>
+                      </Box>
+                    </>
+                  )}
                 </>
               ) : (
                 <Alert severity="info">
