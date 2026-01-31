@@ -206,7 +206,7 @@ app.get('/api/tournament/current', async (req, res) => {
 
 app.post('/api/tournament/create', async (req, res) => {
   try {
-    const { playerIds, matchesPerPlayer = 6, courtSchedule } = req.body;
+    const { playerIds, matchesPerPlayer = 6, courtSchedule, preview = false } = req.body;
     
     if (!playerIds || playerIds.length < 4) {
       return res.status(400).json({ error: 'At least 4 players are required for a tournament' });
@@ -245,6 +245,28 @@ app.post('/api/tournament/create', async (req, res) => {
       scheduledFixtures = [...scheduled, ...unscheduled];
       unscheduledCount = unscheduled.length;
     }
+
+    // If preview mode, return data WITHOUT saving to database
+    if (preview) {
+      const previewTournament = {
+        id: 'preview-' + Date.now(),
+        teams,
+        fixtures: scheduledFixtures,
+        matchesPerPlayer,
+        status: 'preview',
+        isSaved: false,
+        createdAt: new Date().toISOString()
+      };
+      
+      console.log(`Tournament preview created with ${scheduledFixtures.length} matches`);
+      console.log(`Team 1: ${teams.team1.length} players`);
+      console.log(`Team 2: ${teams.team2.length} players`);
+      console.log(`Matches per player: ${matchesPerPlayer}`);
+      
+      return res.json(previewTournament);
+    }
+
+    // Otherwise, save to database (production mode)
 
     // Create tournament in database
     const { data: tournament, error: tournamentError } = await supabase
@@ -291,6 +313,7 @@ app.post('/api/tournament/create', async (req, res) => {
       fixtures: scheduledFixtures,
       matchesPerPlayer,
       status: 'active',
+      isSaved: true,
       createdAt: tournament.created_at
     };
 
@@ -307,6 +330,156 @@ app.post('/api/tournament/create', async (req, res) => {
   } catch (error) {
     console.error('Error creating tournament:', error);
     res.status(500).json({ error: 'Failed to create tournament' });
+  }
+});
+
+app.post('/api/tournament/save', async (req, res) => {
+  try {
+    const { teams, fixtures, matchesPerPlayer, courtSchedule, tournamentId } = req.body;
+    
+    if (!teams || !fixtures || !matchesPerPlayer) {
+      return res.status(400).json({ error: 'Missing required tournament data' });
+    }
+
+    // If updating existing tournament (has tournamentId and it's a real UUID, not preview)
+    if (tournamentId && !tournamentId.startsWith('preview-')) {
+      // Update existing tournament
+      const { data: existingTournament, error: checkError } = await supabase
+        .from('tournaments')
+        .select('id')
+        .eq('id', tournamentId)
+        .eq('status', 'active')
+        .single();
+      
+      if (checkError || !existingTournament) {
+        return res.status(404).json({ error: 'Tournament not found or not active' });
+      }
+      
+      // Delete old matches
+      const { error: deleteMatchesError } = await supabase
+        .from('matches')
+        .delete()
+        .eq('tournament_id', tournamentId);
+      
+      if (deleteMatchesError) throw deleteMatchesError;
+      
+      // Update tournament
+      const { error: updateError } = await supabase
+        .from('tournaments')
+        .update({
+          matches_per_player: matchesPerPlayer,
+          court_schedule: courtSchedule || null
+        })
+        .eq('id', tournamentId);
+      
+      if (updateError) throw updateError;
+      
+      // Insert new matches
+      const matchesData = fixtures.map(fixture => ({
+        id: fixture.id,
+        tournament_id: tournamentId,
+        team1_player1_id: fixture.team1[0],
+        team1_player2_id: fixture.team1[1],
+        team2_player1_id: fixture.team2[0],
+        team2_player2_id: fixture.team2[1],
+        team1_score: fixture.team1Score || null,
+        team2_score: fixture.team2Score || null,
+        winner_team: null,
+        status: fixture.status || 'pending',
+        court_number: fixture.schedule?.courtNumber || null,
+        scheduled_start_time: fixture.schedule?.startTime || null,
+        scheduled_end_time: fixture.schedule?.endTime || null
+      }));
+      
+      const { error: insertMatchesError } = await supabase
+        .from('matches')
+        .insert(matchesData);
+      
+      if (insertMatchesError) throw insertMatchesError;
+      
+      // Cache in memory
+      currentTournament = {
+        id: tournamentId,
+        teams,
+        fixtures,
+        matchesPerPlayer,
+        status: 'active',
+        isSaved: true,
+        createdAt: existingTournament.created_at || new Date().toISOString()
+      };
+      
+      console.log(`Tournament ${tournamentId} updated with ${fixtures.length} matches`);
+      
+      return res.json(currentTournament);
+    }
+
+    // Creating new tournament - check for existing active tournament
+    const { data: existingTournaments, error: checkError } = await supabase
+      .from('tournaments')
+      .select('id')
+      .eq('status', 'active');
+    
+    if (checkError) throw checkError;
+    
+    if (existingTournaments && existingTournaments.length > 0) {
+      return res.status(400).json({ 
+        error: 'An active tournament already exists. Please delete it first.' 
+      });
+    }
+    
+    // Create tournament in database
+    const { data: tournament, error: tournamentError } = await supabase
+      .from('tournaments')
+      .insert([{
+        matches_per_player: matchesPerPlayer,
+        status: 'active',
+        court_schedule: courtSchedule || null
+      }])
+      .select()
+      .single();
+    
+    if (tournamentError) throw tournamentError;
+    
+    // Store matches in database
+    const matchesData = fixtures.map(fixture => ({
+      id: fixture.id,
+      tournament_id: tournament.id,
+      team1_player1_id: fixture.team1[0],
+      team1_player2_id: fixture.team1[1],
+      team2_player1_id: fixture.team2[0],
+      team2_player2_id: fixture.team2[1],
+      team1_score: fixture.team1Score || null,
+      team2_score: fixture.team2Score || null,
+      winner_team: null,
+      status: fixture.status || 'pending',
+      court_number: fixture.schedule?.courtNumber || null,
+      scheduled_start_time: fixture.schedule?.startTime || null,
+      scheduled_end_time: fixture.schedule?.endTime || null
+    }));
+    
+    const { error: matchesError } = await supabase
+      .from('matches')
+      .insert(matchesData);
+    
+    if (matchesError) throw matchesError;
+    
+    // Cache in memory
+    currentTournament = {
+      id: tournament.id,
+      teams,
+      fixtures,
+      matchesPerPlayer,
+      status: 'active',
+      isSaved: true,
+      createdAt: tournament.created_at
+    };
+    
+    console.log(`Tournament saved to database with ${fixtures.length} matches`);
+    
+    res.json(currentTournament);
+  } catch (error) {
+    console.error('Error saving tournament:', error);
+    res.status(500).json({ error: 'Failed to save tournament' });
   }
 });
 
@@ -423,6 +596,53 @@ app.post('/api/tournament/swap-players', async (req, res) => {
   } catch (error) {
     console.error('Error swapping players:', error);
     res.status(500).json({ error: 'Failed to swap players' });
+  }
+});
+
+app.delete('/api/tournament/delete', async (req, res) => {
+  try {
+    // Get active tournament from database
+    const { data: tournaments, error: fetchError } = await supabase
+      .from('tournaments')
+      .select('id')
+      .eq('status', 'active')
+      .limit(1);
+    
+    if (fetchError) throw fetchError;
+    
+    if (!tournaments || tournaments.length === 0) {
+      // Clear in-memory cache just in case
+      currentTournament = null;
+      return res.status(404).json({ error: 'No active tournament found' });
+    }
+    
+    const tournamentId = tournaments[0].id;
+    
+    // Delete matches first (foreign key constraint)
+    const { error: matchesError } = await supabase
+      .from('matches')
+      .delete()
+      .eq('tournament_id', tournamentId);
+    
+    if (matchesError) throw matchesError;
+    
+    // Delete tournament
+    const { error: tournamentError } = await supabase
+      .from('tournaments')
+      .delete()
+      .eq('id', tournamentId);
+    
+    if (tournamentError) throw tournamentError;
+    
+    // Clear in-memory cache
+    currentTournament = null;
+    
+    console.log(`Tournament ${tournamentId} deleted successfully`);
+    
+    res.json({ message: 'Tournament deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting tournament:', error);
+    res.status(500).json({ error: 'Failed to delete tournament' });
   }
 });
 
