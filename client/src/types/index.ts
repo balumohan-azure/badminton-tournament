@@ -43,7 +43,8 @@ export interface Tournament {
   };
   fixtures: Fixture[];
   matchesPerPlayer: number;
-  status: 'active' | 'completed';
+  status: 'preview' | 'active' | 'completed';
+  isSaved: boolean;
   createdAt: string;
   regeneratedAt?: string;
   swappedAt?: string;
@@ -77,4 +78,3 @@ export interface LeaderboardEntry {
   matchesLost: number;
   winRate: number;
 }
-
