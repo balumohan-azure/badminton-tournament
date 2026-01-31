@@ -36,9 +36,24 @@ export const tournamentService = {
     }
   },
 
-  createTournament: async (playerIds: string[], matchesPerPlayer: number = 6, courtSchedule?: any): Promise<Tournament> => {
-    const response = await api.post('/tournament/create', { playerIds, matchesPerPlayer, courtSchedule });
+  createTournament: async (playerIds: string[], matchesPerPlayer: number = 6, courtSchedule?: any, preview: boolean = true): Promise<Tournament> => {
+    const response = await api.post('/tournament/create', { playerIds, matchesPerPlayer, courtSchedule, preview });
     return response.data;
+  },
+
+  saveTournament: async (tournament: Tournament): Promise<Tournament> => {
+    const response = await api.post('/tournament/save', {
+      teams: tournament.teams,
+      fixtures: tournament.fixtures,
+      matchesPerPlayer: tournament.matchesPerPlayer,
+      courtSchedule: null, // Can be extracted from fixtures if needed
+      tournamentId: tournament.id // Include ID for updates
+    });
+    return response.data;
+  },
+
+  deleteTournament: async (): Promise<void> => {
+    await api.delete('/tournament/delete');
   },
 
   regenerateTournament: async (matchesPerPlayer: number = 6): Promise<Tournament> => {
@@ -86,4 +101,3 @@ export const leaderboardService = {
     return response.data;
   },
 };
-
