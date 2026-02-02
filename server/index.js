@@ -194,6 +194,7 @@ app.get('/api/tournament/current', async (req, res) => {
       fixtures,
       matchesPerPlayer: tournament.matches_per_player,
       status: tournament.status,
+      isSaved: true, // Tournament loaded from database is saved
       createdAt: tournament.created_at
     };
 
