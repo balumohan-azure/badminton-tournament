@@ -696,11 +696,80 @@ app.post('/api/tournament/score', async (req, res) => {
 });
 
 app.get('/api/tournament/results', async (req, res) => {
-  if (!currentTournament) {
-    return res.status(400).json({ error: 'No active tournament' });
-  }
-
   try {
+    // If no tournament in memory, try loading from database
+    if (!currentTournament) {
+      const { data: tournaments, error: tournamentsError } = await supabase
+        .from('tournaments')
+        .select('*')
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (tournamentsError) throw tournamentsError;
+
+      if (!tournaments || tournaments.length === 0) {
+        return res.status(400).json({ error: 'No active tournament' });
+      }
+
+      const tournament = tournaments[0];
+
+      // Load matches for this tournament
+      const { data: matches, error: matchesError } = await supabase
+        .from('matches')
+        .select('*')
+        .eq('tournament_id', tournament.id)
+        .order('created_at', { ascending: true });
+
+      if (matchesError) throw matchesError;
+
+      if (!matches || matches.length === 0) {
+        return res.status(400).json({ error: 'No active tournament' });
+      }
+
+      // Extract unique player IDs and reconstruct teams
+      const team1Players = new Set();
+      const team2Players = new Set();
+      
+      matches.forEach(match => {
+        team1Players.add(match.team1_player1_id);
+        team1Players.add(match.team1_player2_id);
+        team2Players.add(match.team2_player1_id);
+        team2Players.add(match.team2_player2_id);
+      });
+
+      // Convert matches to fixtures format
+      const fixtures = matches.map(m => ({
+        id: m.id,
+        team1: [m.team1_player1_id, m.team1_player2_id],
+        team2: [m.team2_player1_id, m.team2_player2_id],
+        status: m.status,
+        team1Score: m.team1_score,
+        team2Score: m.team2_score,
+        winner: m.winner_team === 1 ? 'team1' : m.winner_team === 2 ? 'team2' : undefined,
+        completedAt: m.played_at,
+        schedule: m.court_number ? {
+          courtNumber: m.court_number,
+          startTime: m.scheduled_start_time,
+          endTime: m.scheduled_end_time
+        } : undefined
+      }));
+
+      // Reconstruct tournament object and cache it
+      currentTournament = {
+        id: tournament.id,
+        teams: {
+          team1: Array.from(team1Players),
+          team2: Array.from(team2Players)
+        },
+        fixtures,
+        matchesPerPlayer: tournament.matches_per_player,
+        status: tournament.status,
+        isSaved: true,
+        createdAt: tournament.created_at
+      };
+    }
+
     // Get all unique player IDs from the tournament
     const allPlayerIds = [...currentTournament.teams.team1, ...currentTournament.teams.team2];
     
@@ -713,14 +782,14 @@ app.get('/api/tournament/results', async (req, res) => {
     if (error) {
       console.error('Error fetching players:', error);
       return res.status(500).json({ error: 'Failed to fetch player details' });
-  }
+    }
 
-  const completedFixtures = currentTournament.fixtures.filter(f => f.status === 'completed');
-  const teamStats = calculateTeamStats(currentTournament.teams, completedFixtures);
+    const completedFixtures = currentTournament.fixtures.filter(f => f.status === 'completed');
+    const teamStats = calculateTeamStats(currentTournament.teams, completedFixtures);
 
-  res.json({
-    tournament: currentTournament,
-    teamStats,
+    res.json({
+      tournament: currentTournament,
+      teamStats,
       completedFixtures,
       players: players || []
     });
