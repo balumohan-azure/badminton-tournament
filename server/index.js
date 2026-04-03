@@ -269,6 +269,19 @@ app.post('/api/tournament/create', async (req, res) => {
 
     // Otherwise, save to database (production mode)
 
+    const { data: existingActive, error: activeCheckError } = await supabase
+      .from('tournaments')
+      .select('id')
+      .eq('status', 'active');
+    
+    if (activeCheckError) throw activeCheckError;
+    
+    if (existingActive && existingActive.length > 0) {
+      return res.status(400).json({ 
+        error: 'An active tournament already exists. Please delete it first.' 
+      });
+    }
+
     // Create tournament in database
     const { data: tournament, error: tournamentError } = await supabase
       .from('tournaments')
@@ -602,45 +615,40 @@ app.post('/api/tournament/swap-players', async (req, res) => {
 
 app.delete('/api/tournament/delete', async (req, res) => {
   try {
-    // Get active tournament from database
     const { data: tournaments, error: fetchError } = await supabase
       .from('tournaments')
       .select('id')
-      .eq('status', 'active')
-      .limit(1);
+      .eq('status', 'active');
     
     if (fetchError) throw fetchError;
     
     if (!tournaments || tournaments.length === 0) {
-      // Clear in-memory cache just in case
       currentTournament = null;
       return res.status(404).json({ error: 'No active tournament found' });
     }
+
+    const tournamentIds = tournaments.map(t => t.id);
+    console.log(`Found ${tournamentIds.length} active tournament(s) to delete: ${tournamentIds.join(', ')}`);
     
-    const tournamentId = tournaments[0].id;
-    
-    // Delete matches first (foreign key constraint)
     const { error: matchesError } = await supabase
       .from('matches')
       .delete()
-      .eq('tournament_id', tournamentId);
+      .in('tournament_id', tournamentIds);
     
     if (matchesError) throw matchesError;
     
-    // Delete tournament
     const { error: tournamentError } = await supabase
       .from('tournaments')
       .delete()
-      .eq('id', tournamentId);
+      .in('id', tournamentIds);
     
     if (tournamentError) throw tournamentError;
     
-    // Clear in-memory cache
     currentTournament = null;
     
-    console.log(`Tournament ${tournamentId} deleted successfully`);
+    console.log(`Successfully deleted ${tournamentIds.length} active tournament(s)`);
     
-    res.json({ message: 'Tournament deleted successfully' });
+    res.json({ message: `Deleted ${tournamentIds.length} active tournament(s) successfully` });
   } catch (error) {
     console.error('Error deleting tournament:', error);
     res.status(500).json({ error: 'Failed to delete tournament' });
