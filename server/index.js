@@ -258,6 +258,8 @@ app.post('/api/tournament/create', async (req, res) => {
         isSaved: false,
         createdAt: new Date().toISOString()
       };
+
+      currentTournament = previewTournament;
       
       console.log(`Tournament preview created with ${scheduledFixtures.length} matches`);
       console.log(`Team 1: ${teams.team1.length} players`);
