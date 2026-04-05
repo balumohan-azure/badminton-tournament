@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const Groq = require('groq-sdk');
 const { v4: uuidv4 } = require('uuid');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -14,8 +14,8 @@ const PORT = process.env.PORT || 10000;
 app.use(cors());
 app.use(express.json());
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize Groq AI
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 // Initialize Supabase
 const supabase = createClient(
@@ -1073,9 +1073,6 @@ function scheduleMatches(fixtures, courtSchedule) {
 // AI-powered team creation
 async function createBalancedTeams(players, matchesPerPlayer = 6) {
   try {
-    // const model = genAI.getGenerativeModel({ model: "gemini-pro" });
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-    
     const prompt = `
     Create balanced teams for a badminton doubles tournament from these players:
     ${players.map(p => `${p.name} (${p.skillLevel})`).join(', ')}
@@ -1095,14 +1092,16 @@ async function createBalancedTeams(players, matchesPerPlayer = 6) {
     }
     `;
 
-    const result = await model.generateContent(prompt);
-    const response = await result.response;
-    const text = response.text();
+    const completion = await groq.chat.completions.create({
+      messages: [{ role: 'user', content: prompt }],
+      model: 'llama-3.3-70b-versatile',
+      temperature: 0.3,
+      response_format: { type: 'json_object' },
+    });
+    const text = completion.choices[0].message.content;
     
-    // Parse AI response
-    const teamData = JSON.parse(text.replace(/```json\n?|\n?```/g, ''));
+    const teamData = JSON.parse(text);
     
-    // Convert player names back to IDs
     const team1Ids = teamData.team1.map(name => 
       players.find(p => p.name === name)?.id
     ).filter(Boolean);
@@ -1117,7 +1116,6 @@ async function createBalancedTeams(players, matchesPerPlayer = 6) {
     };
   } catch (error) {
     console.error('AI team creation failed, using fallback:', error);
-    // Fallback: simple random assignment
     const shuffled = [...players].sort(() => Math.random() - 0.5);
     const mid = Math.ceil(shuffled.length / 2);
     
